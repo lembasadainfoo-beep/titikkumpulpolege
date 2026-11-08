@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>TKP — Dashboard</title>
+<style>
+:root{--ink:#172235;--m:#687386;--line:#e7ebf1;--navy:#101827;--gold:#e5b65b;--g:#287c62;--r:#b3392f}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f5f7fa;color:var(--ink);font-size:14px}
+header{background:var(--navy);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+nav button{background:none;color:#fff;border:0;padding:8px 12px;cursor:pointer;font:inherit;border-radius:8px}nav button.on{background:var(--gold);color:var(--navy);font-weight:700}
+main{max-width:1000px;margin:0 auto;padding:14px}.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;overflow-x:auto}
+table{width:100%;border-collapse:collapse}td,th{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}th{color:var(--m);font-size:12px}
+input,select{font:inherit;padding:8px;border:1px solid #cfd6e0;border-radius:8px;max-width:100%}td input[type=number]{width:90px}
+button.b{background:var(--gold);border:0;border-radius:8px;padding:7px 11px;font:inherit;font-weight:600;cursor:pointer;margin:2px;color:var(--navy)}
+button.b.s{background:#fff;border:1px solid #cfd6e0}button.b.d{background:#fbe7e5;color:var(--r)}button:disabled{opacity:.5}
+.tag{padding:2px 8px;border-radius:99px;background:#eef2f7;font-size:12px;font-weight:600}.ok{background:#e3f4ec;color:var(--g)}.no{background:#fbe7e5;color:var(--r)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.k{background:#f5f7fa;border-radius:10px;padding:10px}.k b{font-size:22px;display:block}
+.err{color:var(--r);font-weight:600;margin:8px 0}#toast{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 16px;border-radius:10px;display:none}
+</style></head><body>
+<header><b id="ttl">TKP Dashboard</b><nav id="nav"></nav><button class="b s" id="out" style="display:none">Keluar</button></header>
+<main id="app"></main><div id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
+<script>
+// ====== ISI BAGIAN INI ======
+const SUPABASE_URL='https://qimygujcelfedblitmkw.supabase.co', ANON_KEY='sb_publishable_DgEqYjFW5UeHWfDESqG60g_0MTofHXU';
+const SLUG='tkp-musim-1';
+const PESERTA_URL='https://DOMAINMU/peserta.html';   // alamat halaman peserta
+const TAG='@titikkumpulpolege #TitikKumpulPolege';
+// ============================
+const db=supabase.createClient(SUPABASE_URL,ANON_KEY),app=document.getElementById('app'),nav=document.getElementById('nav');
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const rp=n=>'Rp'+Number(n).toLocaleString('id-ID');
+let C,ME,tab='ring';
+function toast(t){const e=$('toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2600)}
+async function rpc(n,a){const{data,error}=await db.rpc(n,a||{});if(error)throw error;return data}
+async function aksi(fn,ok,reload){try{await fn();toast(ok||'Berhasil');if(reload!==false)render()}catch(x){alert(x.message)}}
+const waOpen=(no,t)=>window.open(`https://wa.me/${no}?text=${encodeURIComponent(t)}`,'_blank');
+const link=t=>`${PESERTA_URL}#status/${t}`;
+const WA={
+ terdaftar:p=>`Selamat ${p.nama_panggung}, pendaftaranmu di ${C.nama} sudah terverifikasi! Kode pesertamu ${p.kode_peserta}. Caption videomu: "Audisi ${C.nama} | Kode ${p.kode_peserta} | ${TAG}". Setelah diunggah, kirim link videonya di sini: ${link(p.status_token)}`,
+ video_ok:p=>`Halo ${p.nama_panggung}, videomu sudah disetujui dan kamu resmi jadi peserta ${C.nama}! Ajak teman like, komen, dan dukung videomu ya. Cek statusmu: ${link(p.status_token)}`,
+ video_tolak:p=>`Halo ${p.nama_panggung}, videomu belum bisa kami setujui: ${p.video_catatan||'-'}. Silakan kirim ulang di ${link(p.status_token)}`,
+ bayar_tolak:p=>`Halo ${p.nama}, pembayaranmu belum bisa kami verifikasi: ${p.catatan_admin||'-'}. Cek di ${link(p.status_token)}`,
+ ingatkan:p=>`Halo ${p.nama_panggung}, jangan lupa kirim video audisimu di ${link(p.status_token)} sebelum batas waktu ya!`
+};
+async function load(){C=(await db.from('competitions').select('*').eq('slug',SLUG).single()).data}
+
+async function boot(){
+ const{data:{session}}=await db.auth.getSession();
+ if(!session){app.innerHTML=`<div class="card" style="max-width:380px;margin:40px auto"><h2>Masuk</h2><p><input id="em" type="email" placeholder="Email" style="width:100%"></p><p><input id="pw" type="password" placeholder="Password" style="width:100%"></p><button class="b" id="li">Masuk</button><div class="err" id="e"></div></div>`;
+  $('li').onclick=async()=>{const{error}=await db.auth.signInWithPassword({email:$('em').value,password:$('pw').value});if(error)$('e').textContent='Email atau password salah';else boot()};return}
+ ME=(await db.from('profiles').select('role,nama').eq('id',session.user.id).single()).data;
+ if(!ME){app.innerHTML='<div class="card err">Akun ini belum terdaftar sebagai admin/juri.</div>';return}
+ $('out').style.display='';$('out').onclick=async()=>{await db.auth.signOut();location.reload()};
+ await load();$('ttl').textContent=`TKP · ${ME.nama} (${ME.role})`;
+ if(ME.role==='juri'){nav.innerHTML='';juri();return}
+ const T={ring:'Ringkasan',pes:'Peserta',vot:'Dukungan',kla:'Klasemen',tah:'Tahap & Final'};
+ nav.innerHTML=Object.entries(T).map(([k,v])=>`<button data-t="${k}" class="${k===tab?'on':''}">${v}</button>`).join('');
+ nav.onclick=e=>{if(e.target.dataset.t){tab=e.target.dataset.t;boot()}};render()}
+
+function render(){({ring,pes,vot,kla,tah})[tab]().catch(x=>app.innerHTML=`<div class="card err">${esc(x.message)}</div>`)}
+
+async function ring(){await load();const r=(await rpc('admin_ringkasan',{p_slug:SLUG}))[0],k=(l,v)=>`<div class="k">${l}<b>${v}</b></div>`;
+ app.innerHTML=`<div class="card"><h3>${esc(C.nama)} — tahap: ${esc(C.fase)}</h3><div class="grid">
+ ${k('Peserta menunggu verifikasi',r.peserta_menunggu_verifikasi)}${k('Peserta terverifikasi',r.peserta_terverifikasi)}${k('Video perlu diperiksa',r.video_menunggu_review)}${k('Video disetujui',r.video_disetujui)}
+ ${k('Dukungan menunggu verifikasi',r.vote_menunggu_verifikasi)}${k('Dukungan terverifikasi',r.vote_terverifikasi)}${k('Total suara',r.total_suara)}
+ ${k('Pemasukan pendaftaran',rp(r.pendapatan_pendaftaran))}${k('Pemasukan dukungan',rp(r.pendapatan_vote))}</div></div>
+ <div class="card"><h3>Imbalan teman</h3><table><tr><th>Teman</th><th>Pendaftar</th><th>Komisi/orang</th><th>Total</th><th>Sisa</th></tr>${(await rpc('admin_rekap_referral',{p_slug:SLUG})).map(x=>`<tr><td>${esc(x.nama)} <span class="tag">${esc(x.kode)}</span></td><td>${x.jumlah_pendaftar}</td><td>${x.komisi_per_pendaftar==null?'-':rp(x.komisi_per_pendaftar)}</td><td>${rp(x.total_komisi)}</td><td>${rp(x.sisa)}</td></tr>`).join('')}</table>
+ <p style="color:var(--m)">Tambah teman: Supabase → Table Editor → referrers.</p></div>`}
+
+async function bukti(path){const{data,error}=await db.storage.from('bukti').createSignedUrl(path,600);if(error)return alert(error.message);window.open(data.signedUrl,'_blank')}
+window.bukti=bukti;
+async function pes(){const{data}=await db.from('participants').select('*').eq('competition_id',C.id).order('created_at',{ascending:false});window.P=data;
+ const st=s=>`<span class="tag ${s==='terverifikasi'||s==='disetujui'?'ok':s==='ditolak'?'no':''}">${s.replace(/_/g,' ')}</span>`;
+ app.innerHTML=`<div class="card"><input id="q" placeholder="Cari nama / kode / WA" style="width:100%;margin-bottom:8px"><table id="t"><tr><th>Peserta</th><th>Bayar</th><th>Video</th><th>Aksi</th></tr>${data.map((p,i)=>`<tr data-s="${esc((p.nama+p.nama_panggung+(p.kode_peserta||'')+p.no_wa).toLowerCase())}"><td><b>${esc(p.nama_panggung)}</b> ${esc(p.kode_peserta||'')} ${p.wildcard_calon?'<span class="tag ok">Wild Card</span>':''}<br>${esc(p.nama)} · ${p.no_wa}<br>${p.referrer_id?'<span class="tag">referral</span> ':''}${rp(p.harga_daftar+p.kode_unik)}</td>
+ <td>${st(p.status)}<br>${p.bukti_bayar_path?`<a href="#" onclick="bukti('${p.bukti_bayar_path}');return false">Lihat bukti</a>`:''}</td>
+ <td>${st(p.video_status)}<br>${p.video_url?`<a href="${esc(p.video_url)}" target="_blank" rel="noopener">Buka video</a>`:''}</td>
+ <td>${p.status!=='terverifikasi'?`<button class="b" onclick="act(${i},'ver')">Verifikasi</button><button class="b d" onclick="act(${i},'tol')">Tolak</button>`:''}
+ ${p.video_status==='disetujui'?`<button class="b s" onclick="act(${i},'wc')">${p.wildcard_calon?'Cabut wild card':'Beri wild card'}</button>`:''}
+ ${p.video_status==='dikirim'?`<button class="b" onclick="act(${i},'vok')">Setujui video</button><button class="b d" onclick="act(${i},'vno')">Tolak video</button>`:''}
+ <select id="w${i}"><option value="terdaftar">WA: terdaftar</option><option value="video_ok">WA: video disetujui</option><option value="video_tolak">WA: video ditolak</option><option value="bayar_tolak">WA: bayar ditolak</option><option value="ingatkan">WA: pengingat</option></select><button class="b s" onclick="act(${i},'wa')">Kirim</button></td></tr>`).join('')}</table></div>`;
+ $('q').oninput=e=>document.querySelectorAll('#t tr[data-s]').forEach(r=>r.style.display=r.dataset.s.includes(e.target.value.toLowerCase())?'':'none')}
+window.act=async(i,a)=>{const p=P[i];
+ if(a==='ver')aksi(()=>rpc('admin_verifikasi_peserta',{p_id:p.id}),'Terverifikasi. Kirim WA terdaftar dari tombol Kirim.');
+ if(a==='tol'){const r=prompt('Alasan menolak pembayaran:');if(r)aksi(()=>rpc('admin_tolak_peserta',{p_id:p.id,p_alasan:r}))}
+ if(a==='vok')aksi(()=>rpc('admin_setujui_video',{p_id:p.id}),'Video disetujui');
+ if(a==='vno'){const r=prompt('Alasan menolak video (mis. tag/kode belum ada):');if(r)aksi(()=>rpc('admin_tolak_video',{p_id:p.id,p_alasan:r}))}
+ if(a==='wc')aksi(()=>rpc('admin_set_wildcard',{p_id:p.id,p_aktif:!p.wildcard_calon}),p.wildcard_calon?'Wild card dicabut':'Wild card diberikan');
+ if(a==='wa'){const k=$('w'+i).value;waOpen(p.no_wa,WA[k](p))}};
+
+async function vot(){const{data}=await db.from('votes').select('*,participants(nama_panggung)').eq('competition_id',C.id).order('created_at',{ascending:false});window.V=data;
+ app.innerHTML=`<div class="card"><table><tr><th>Pendukung</th><th>Untuk</th><th>Tagihan</th><th>Status</th><th>Aksi</th></tr>${data.map((v,i)=>`<tr><td><b>${esc(v.nama_pendukung)}</b><br>${v.no_wa}<br><span style="color:var(--m)">${esc(v.nomor_transaksi)}</span></td><td>${esc(v.participants.nama_panggung)}<br>${v.jumlah_suara} suara</td><td>${rp(v.harga+v.kode_unik)}<br>${v.bukti_bayar_path?`<a href="#" onclick="bukti('${v.bukti_bayar_path}');return false">Lihat bukti</a>`:'<i>belum ada bukti</i>'}</td>
+ <td><span class="tag ${v.status==='terverifikasi'?'ok':v.status==='ditolak'?'no':''}">${v.status.replace(/_/g,' ')}</span></td>
+ <td>${v.status!=='terverifikasi'&&v.status!=='ditolak'?`<button class="b" onclick="vact(${i},'ver')">Verifikasi</button><button class="b d" onclick="vact(${i},'tol')">Tolak</button>`:''}${v.status==='terverifikasi'?`<button class="b s" onclick="vact(${i},'wa')">WA terima kasih</button>`:''}</td></tr>`).join('')}</table></div>`}
+window.vact=(i,a)=>{const v=V[i];
+ if(a==='ver')aksi(()=>rpc('admin_verifikasi_vote',{p_id:v.id}),'Terverifikasi. Kirim WA terima kasih dari tombolnya.');
+ if(a==='tol'){const r=prompt('Alasan menolak:');if(r)aksi(()=>rpc('admin_tolak_vote',{p_id:v.id,p_alasan:r}))}
+ if(a==='wa')waOpen(v.no_wa,`Terima kasih ${v.nama_pendukung}! ${v.jumlah_suara} suara darimu untuk ${v.participants.nama_panggung} sudah kami terima dan dihitung. Namamu tampil di dinding pendukung. Semangat terus mendukung!`)};
+
+async function kla(){const last=await rpc('klasemen_publik',{p_slug:SLUG});
+ app.innerHTML=`<div class="card"><h3>Input harian view / like / komentar</h3><p>Isi angka sesuai yang terlihat di TikTok/Facebook pada satu waktu yang sama, lalu terbitkan.</p>
+ <input type="date" id="tg"><button class="b" id="sp">Siapkan klasemen</button><div id="m"></div></div>
+ <div class="card"><h3>Klasemen terbit terakhir</h3>${last.length?`<p>${last[0].tanggal}</p><table>${last.map(r=>`<tr><td>${r.peringkat}</td><td>${esc(r.nama_panggung)}</td><td>${r.nilai_audisi}</td><td>${r.perubahan??''}</td></tr>`).join('')}</table>`:'Belum ada.'}</div>`;
+ $('sp').onclick=()=>aksi(async()=>{const id=await rpc('admin_siapkan_snapshot',{p_slug:SLUG,p_tanggal:$('tg').value||null});
+  const{data}=await db.from('snapshot_metrics').select('*,participants(nama_panggung,video_platform,video_url)').eq('snapshot_id',id);window.M=data;window.SID=id;
+  $('m').innerHTML=`<table><tr><th>Peserta</th><th>View</th><th>Like</th><th>Komentar</th></tr>${data.map((r,i)=>`<tr><td>${esc(r.participants.nama_panggung)} <a href="${esc(r.participants.video_url)}" target="_blank" rel="noopener">(${r.participants.video_platform})</a></td>${['views','likes','comments'].map(f=>`<td><input type="number" min="0" id="${f}${i}" value="${r[f]}"></td>`).join('')}</tr>`).join('')}</table>
+  <button class="b s" id="sv">Simpan draf</button><button class="b" id="tb">Terbitkan klasemen</button>`;
+  const simpan=()=>db.from('snapshot_metrics').upsert(M.map((r,i)=>({snapshot_id:SID,participant_id:r.participant_id,views:+$('views'+i).value||0,likes:+$('likes'+i).value||0,comments:+$('comments'+i).value||0})),{onConflict:'snapshot_id,participant_id'}).then(({error})=>{if(error)throw error});
+  $('sv').onclick=()=>aksi(simpan,'Draf tersimpan',false);
+  $('tb').onclick=()=>confirm('Terbitkan klasemen sekarang? Angka tidak bisa diubah lagi.')&&aksi(async()=>{await simpan();await rpc('admin_terbitkan_snapshot',{p_snapshot_id:SID})},'Klasemen terbit')},'Siap diisi',false)}
+
+async function tah(){await load();const ps=(await db.from('participants').select('id,nama_panggung,kode_peserta,finalist_type,wildcard_calon').eq('competition_id',C.id).eq('video_status','disetujui')).data||[];
+ app.innerHTML=`<div class="card"><h3>Tahap sekarang: ${esc(C.fase)}</h3>
+ <p><label><input type="checkbox" id="pd" ${C.pendaftaran_dibuka?'checked':''}> Pendaftaran dibuka</label> &nbsp; <label><input type="checkbox" id="vd" ${C.voting_dibuka?'checked':''}> Voting dibuka</label></p>
+ <button class="b s" id="sf">Simpan pembukaan</button> <button class="b" id="au">Mulai audisi</button> <button class="b" id="fi">Mulai final</button></div>
+ <div class="card"><h3>Tetapkan finalis</h3><p>${C.jumlah_slot_otomatis} teratas klasemen lolos otomatis. Peserta yang sudah diberi wild card di daftar Peserta otomatis tercentang (maksimal ${C.jumlah_slot_wildcard}). Yang masih di 8 besar sebaiknya tidak dicentang:</p>
+ ${ps.map(p=>`<label style="display:block"><input type="checkbox" class="wc" value="${p.id}" ${p.wildcard_calon?'checked':''}> ${esc(p.nama_panggung)} ${esc(p.kode_peserta)} ${p.finalist_type?`<span class="tag ok">${p.finalist_type}</span>`:''}</label>`).join('')}
+ <button class="b" id="tf">Tetapkan finalis</button></div>
+ <div class="card"><h3>Final & nilai juri</h3><button class="b s" id="pv">Pratinjau hasil</button> <button class="b" id="kh">Kunci hasil final</button> <button class="b s" id="ar">Arsipkan</button><div id="hs"></div></div>`;
+ $('sf').onclick=()=>aksi(async()=>{const{error}=await db.from('competitions').update({pendaftaran_dibuka:$('pd').checked,voting_dibuka:$('vd').checked}).eq('id',C.id);if(error)throw error});
+ $('au').onclick=()=>aksi(()=>rpc('admin_ubah_fase',{p_slug:SLUG,p_fase:'audisi'}));
+ $('fi').onclick=()=>aksi(()=>rpc('admin_ubah_fase',{p_slug:SLUG,p_fase:'final'}));
+ $('tf').onclick=()=>confirm('Tetapkan finalis? Pendaftaran dan voting akan ditutup.')&&aksi(()=>rpc('admin_tetapkan_finalis',{p_slug:SLUG,p_wildcard_ids:[...document.querySelectorAll('.wc:checked')].map(x=>x.value)}));
+ $('kh').onclick=()=>confirm('Kunci hasil final? Tidak bisa dibatalkan.')&&aksi(()=>rpc('admin_kunci_hasil_final',{p_slug:SLUG}));
+ $('ar').onclick=()=>aksi(()=>rpc('admin_arsipkan',{p_slug:SLUG}));
+ $('pv').onclick=()=>aksi(async()=>{const r=await rpc('admin_pratinjau_final',{p_slug:SLUG});
+  $('hs').innerHTML=`<table><tr><th>#</th><th>Finalis</th><th>Nilai juri</th><th>Nilai vote</th><th>Akhir</th><th>Suara</th><th>Juri terkunci</th></tr>${r.map(x=>`<tr><td>${x.peringkat}</td><td>${esc(x.nama_panggung)}</td><td>${x.nilai_juri}</td><td>${x.nilai_vote}</td><td><b>${x.nilai_akhir}</b></td><td>${x.jumlah_suara}</td><td>${x.juri_terkunci}/${C.jumlah_juri}</td></tr>`).join('')}</table>`},'Pratinjau dimuat',false)}
+
+// ===== HALAMAN JURI =====
+async function juri(){
+ const[fin,kr,own]=await Promise.all([rpc('juri_daftar_finalis',{p_slug:SLUG}),db.from('judging_criteria').select('*').eq('competition_id',C.id).order('urutan'),db.from('juri_scores').select('*').eq('competition_id',C.id)]);
+ const K=kr.data,S={};own.data.forEach(s=>S[s.participant_id+s.criterion_id]=s);const lock=own.data.length&&own.data.every(s=>s.locked);
+ if(C.fase!=='final'){app.innerHTML='<div class="card">Penilaian belum dibuka. Tunggu admin memulai tahap final.</div>';return}
+ app.innerHTML=`<div class="card"><h3>Penilaian finalis</h3><p>Nilai 0–100 per kriteria. ${lock?'<b>Nilaimu sudah dikunci.</b>':'Simpan dulu, kunci setelah semua terisi.'}</p>
+ <table><tr><th>Finalis</th>${K.map(k=>`<th>${esc(k.nama)} (${k.bobot}%)</th>`).join('')}<th>Nilai kamu</th></tr>${fin.map((f,i)=>`<tr><td><b>${esc(f.nama_panggung)}</b> ${esc(f.kode_peserta)}<br><a href="${esc(f.video_url)}" target="_blank" rel="noopener">Tonton video</a></td>
+ ${K.map((k,j)=>`<td><input type="number" min="0" max="100" step="0.5" id="s${i}_${j}" value="${S[f.peserta_id+k.id]?.skor??''}" ${lock?'disabled':''} oninput="hit(${i})"></td>`).join('')}<td><b id="h${i}">-</b></td></tr>`).join('')}</table>
+ ${lock?'':'<button class="b s" id="sv">Simpan nilai</button><button class="b" id="kc">Kunci nilai</button>'}</div>`;
+ window.hit=i=>{let t=0,ok=true;K.forEach((k,j)=>{const v=$(`s${i}_${j}`).value;if(v==='')ok=false;else t+=v*k.bobot/100});$('h'+i).textContent=ok?t.toFixed(2):'-'};fin.forEach((_,i)=>hit(i));
+ const simpan=async()=>{const rows=[];fin.forEach((f,i)=>K.forEach((k,j)=>{const v=$(`s${i}_${j}`).value;if(v!=='')rows.push({competition_id:C.id,participant_id:f.peserta_id,juri_id:(S0||0),criterion_id:k.id,skor:+v})}));
+  const{data:{user}}=await db.auth.getUser();rows.forEach(r=>r.juri_id=user.id);
+  const{error}=await db.from('juri_scores').upsert(rows,{onConflict:'participant_id,juri_id,criterion_id'});if(error)throw error};
+ const S0=0;if(!lock){$('sv').onclick=()=>aksi(simpan,'Nilai tersimpan',false);$('kc').onclick=()=>confirm('Kunci nilai? Setelah dikunci tidak bisa diubah.')&&aksi(async()=>{await simpan();await rpc('juri_kunci_nilai',{p_slug:SLUG})},'Nilai dikunci',false).then(()=>juri())}}
+boot();
+</script></body></html>

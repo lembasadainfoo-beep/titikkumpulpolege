@@ -166,7 +166,7 @@
       <nav class="navlinks" id="navlinks">
         <a href="#beranda">Beranda</a><a href="#event">Event</a><a href="#ranking">Top 10</a><a href="#promosi">Promosi</a><a href="#memory">Kenangan</a>
       </nav>
-      <a class="nav-cta" href="#event">Jelajahi Event <span>↗</span></a>
+      <a class="nav-cta" href="peserta.html#daftar">Daftar Lomba <span>↗</span></a>
       <button class="menu-btn" id="menuBtn" aria-label="Buka menu" aria-expanded="false">☰</button>
     </div>
   </header>
@@ -206,11 +206,11 @@
           <article class="event-feature">
             <div class="event-image"><img src="https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=900&q=85" alt="Penyanyi tampil di panggung" /></div>
             <div class="event-content">
-              <span class="status">CONTOH EVENT AKTIF</span>
+              <span class="status" id="evStatus">LOMBA KARAOKE</span>
               <h3>Lomba Karaoke<br>Titik Kumpul</h3>
               <p>Ajang unjuk bakat dan dukung peserta favoritmu. Ikuti perkembangan peringkat melalui halaman Top 10.</p>
               <div class="meta"><span>◷ Jadwal: menyusul</span><span>⌖ Polege</span></div>
-              <a class="btn btn-gold" href="#ranking">Lihat Peringkat <span>→</span></a>
+              <a class="btn btn-gold" id="evDaftar" href="peserta.html#daftar">Daftar jadi peserta <span>→</span></a> <a class="btn btn-gold" id="evDukung" href="peserta.html#dukung">Dukung peserta <span>→</span></a> <a class="btn btn-gold" href="#ranking">Lihat Peringkat <span>→</span></a>
             </div>
           </article>
           <div class="event-side">
@@ -233,8 +233,8 @@
           <div class="rank-intro">
             <div class="kicker">Dukung peserta favoritmu</div>
             <h2>Top 10<br>Ranking Karaoke</h2>
-            <p>Peringkat ditampilkan berdasarkan vote yang telah diverifikasi oleh admin. Hanya 10 peserta teratas yang tampil di halaman publik.</p>
-            <div class="rank-note">Peringkat ini masih menggunakan data ilustrasi. Data resmi akan terhubung setelah sistem voting diaktifkan.</div>
+            <p>Peringkat dihitung dari interaksi video dan dukungan yang telah diverifikasi admin, diperbarui setiap hari. Sepuluh peserta tampil di halaman publik, termasuk peserta Wild Card pilihan panitia.</p>
+            <div class="rank-note" id="rankNote">Memuat peringkat…</div>
           </div>
           <div class="rank-card" id="rankList" aria-label="Contoh peringkat 10 peserta">
             <!-- Sample ranking rows are rendered by JavaScript. -->
@@ -298,31 +298,38 @@
   </footer>
   <div class="demo-toast" id="toast" role="status" aria-live="polite"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
   <script>
-    // DATA CONTOH — nanti diganti dengan data resmi dari Supabase / Google Sheets.
-    const sampleRanking = [
-      {name:"Andi Polege",category:"Peserta karaoke",score:96},
-      {name:"Siti Rahma",category:"Peserta karaoke",score:89},
-      {name:"Rian Akustik",category:"Peserta karaoke",score:83},
-      {name:"Maya Putri",category:"Peserta karaoke",score:77},
-      {name:"Fajar Musik",category:"Peserta karaoke",score:72},
-      {name:"Dina Voice",category:"Peserta karaoke",score:66},
-      {name:"Rizal P.",category:"Peserta karaoke",score:61},
-      {name:"Nia Salsabila",category:"Peserta karaoke",score:55},
-      {name:"Aldi R.",category:"Peserta karaoke",score:49},
-      {name:"Putri Aulia",category:"Peserta karaoke",score:43}
-    ];
-    const rankList = document.getElementById("rankList");
-    rankList.innerHTML = sampleRanking.map((person,index)=>`
+    // ====== ISI BAGIAN INI ======
+    const SUPABASE_URL="https://qimygujcelfedblitmkw.supabase.co", ANON_KEY="sb_publishable_DgEqYjFW5UeHWfDESqG60g_0MTofHXU";
+    const SLUG="tkp-musim-1", WA_ADMIN="6281234567890";
+    // ============================
+    const db=supabase.createClient(SUPABASE_URL,ANON_KEY);
+    const esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    const rankList=document.getElementById("rankList"),rankNote=document.getElementById("rankNote");
+    const FASE={belum_mulai:"SEGERA HADIR",audisi:"AUDISI BERLANGSUNG",finalis_ditetapkan:"FINALIS DITETAPKAN",final:"BABAK FINAL",selesai:"LOMBA SELESAI",arsip:"ARSIP"};
+    (async()=>{
+      try{
+        const{data:k}=await db.from("competitions").select("fase,pendaftaran_dibuka,voting_dibuka").eq("slug",SLUG).maybeSingle();
+        if(k){document.getElementById("evStatus").textContent=FASE[k.fase]||"LOMBA KARAOKE";
+          if(k.pendaftaran_dibuka)document.getElementById("evDaftar").style.display="";
+          if(k.voting_dibuka)document.getElementById("evDukung").style.display="";}
+        const{data,error}=await db.rpc("klasemen_publik",{p_slug:SLUG});
+        if(error)throw error;
+        if(!data.length){rankList.innerHTML='<div class="rank-row"><div></div><div><div class="rank-name">Klasemen belum terbit</div><div class="rank-sub">Peringkat akan muncul setelah audisi berjalan.</div></div></div>';rankNote.textContent="Klasemen diperbarui setiap hari oleh admin.";return}
+        rankList.innerHTML=data.map((r,i)=>`
       <div class="rank-row">
-        <div class="rank-no">${String(index+1).padStart(2,"0")}</div>
+        <div class="rank-no">${String(i+1).padStart(2,"0")}</div>
         <div>
-          <div class="rank-name">${person.name}</div>
-          <div class="rank-sub">${person.category}</div>
-          <div class="rank-bar"><span style="width:${person.score}%"></span></div>
+          <div class="rank-name">${esc(r.nama_panggung)}</div>
+          <div class="rank-sub">${r.wildcard?"★ WILD CARD · ":""}${esc(r.kode_peserta)}${r.nilai_audisi!=null?" · nilai "+r.nilai_audisi:""}${r.perubahan>0?" ▲"+r.perubahan:r.perubahan<0?" ▼"+(-r.perubahan):""}</div>
+          <div class="rank-bar"><span style="width:${Math.min(100,r.nilai_audisi??0)}%"></span></div>
         </div>
-        <div class="rank-label">#${index+1}<small>PERINGKAT</small></div>
+        <div class="rank-label">${r.wildcard?"WC<small>WILD CARD</small>":"#"+r.peringkat+"<small>PERINGKAT</small>"}</div>
       </div>`).join("");
+        rankNote.textContent="Diperbarui "+new Date(data[0].terbit_at).toLocaleString("id-ID")+". Dukung peserta favoritmu lewat tombol di bagian Event.";
+      }catch(e){rankNote.textContent="Peringkat belum bisa dimuat: "+e.message}
+    })();
 
     const menuBtn=document.getElementById("menuBtn");
     const navlinks=document.getElementById("navlinks");
@@ -344,7 +351,7 @@
       event.preventDefault();showToast(link.dataset.demo);
     }));
     document.getElementById("contactBtn").addEventListener("click",event=>{
-      event.preventDefault();showToast("Kontak WhatsApp pengelola akan diatur pada tahap berikutnya.");
+      event.preventDefault();window.open("https://wa.me/"+WA_ADMIN,"_blank");
     });
     document.getElementById("year").textContent=new Date().getFullYear();
   </script>
