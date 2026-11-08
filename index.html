@@ -206,7 +206,7 @@
           <article class="event-feature">
             <div class="event-image"><img src="https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=900&q=85" alt="Penyanyi tampil di panggung" /></div>
             <div class="event-content">
-              <span class="status" id="evStatus">LOMBA KARAOKE</span>
+              <span class="status" id="evStatus" data-auto="1">LOMBA KARAOKE</span>
               <h3>Lomba Karaoke<br>Titik Kumpul</h3>
               <p>Ajang unjuk bakat dan dukung peserta favoritmu. Ikuti perkembangan peringkat melalui halaman Top 10.</p>
               <div class="meta"><span>◷ Jadwal: menyusul</span><span>⌖ Polege</span></div>
@@ -240,6 +240,13 @@
             <!-- Sample ranking rows are rendered by JavaScript. -->
           </div>
         </div>
+      </div>
+    </section>
+
+    <section id="peserta" style="display:none;padding-bottom:10px">
+      <div class="container">
+        <div class="section-head"><div><div class="kicker">Peserta resmi</div><h2>Kenali Peserta</h2><p class="section-desc">Tonton penampilan dan dukung peserta favoritmu.</p></div></div>
+        <div id="pesertaList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px"></div>
       </div>
     </section>
 
@@ -308,12 +315,34 @@
     const esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
     const rankList=document.getElementById("rankList"),rankNote=document.getElementById("rankNote");
     const FASE={belum_mulai:"SEGERA HADIR",audisi:"AUDISI BERLANGSUNG",finalis_ditetapkan:"FINALIS DITETAPKAN",final:"BABAK FINAL",selesai:"LOMBA SELESAI",arsip:"ARSIP"};
+    async function muatKonten(){
+      try{
+        const[{data:st},{data:it}]=await Promise.all([db.from("site_settings").select("key,value"),db.from("site_items").select("*").eq("tampil",true).order("urutan").order("created_at")]);
+        const S={};(st||[]).forEach(r=>S[r.key]=r.value);
+        const br=t=>esc(t).replace(/\n/g,"<br>"),su=u=>/^(https?:\/\/|\/|#|[\w.\/-]+\.html)/i.test(u||"")?u:"#",q=s=>document.querySelector(s),by=j=>(it||[]).filter(x=>x.jenis===j);
+        const im=(u,a)=>u&&su(u)!=="#"?`<img src="${esc(u)}" alt="${esc(a)}" />`:"";
+        const lk=(c,x)=>x.tombol_label?`<a class="${c}" href="${esc(su(x.tombol_url))}">${esc(x.tombol_label)} ↗</a>`:"";
+        const hc=q(".photo-caption");
+        if(hc&&(S.hero_label||S.hero_judul||S.hero_teks))hc.innerHTML=`<small>${esc(S.hero_label||"COMMUNITY • EVENT • MOMENTS")}</small><h3>${br(S.hero_judul||"Setiap pertemuan\npunya cerita.")}</h3><p>${esc(S.hero_teks||"Mulai dari sini, jadi bagian dari keseruannya.")}</p>`;
+        if(S.kontak_judul||S.kontak_teks)q(".join-inner>div").innerHTML=`<h2>${esc(S.kontak_judul||"Ada ide seru untuk Polege?")}</h2><p>${esc(S.kontak_teks||"")}</p>`;
+        if(S.kontak_wa)window.WA_NOW=S.kontak_wa.replace(/\D/g,"");
+        const e=by("event")[0];
+        if(e)q(".event-feature").innerHTML=`<div class="event-image">${im(e.gambar_url,e.judul)}</div><div class="event-content"><span class="status" id="evStatus" ${e.competition_slug===SLUG?'data-auto="1"':""}>${esc(e.label||"EVENT")}</span><h3>${br(e.judul)}</h3><p>${esc(e.deskripsi||"")}</p><div class="meta">${e.jadwal?`<span>◷ ${esc(e.jadwal)}</span>`:""}${e.lokasi?`<span>⌖ ${esc(e.lokasi)}</span>`:""}</div>${e.competition_slug?'<a class="btn btn-gold" href="peserta.html#daftar">Daftar jadi peserta <span>→</span></a> <a class="btn btn-gold" href="peserta.html#dukung">Dukung peserta <span>→</span></a> ':""}${lk("btn btn-gold",e)||'<a class="btn btn-gold" href="#ranking">Lihat Peringkat <span>→</span></a>'}</div>`;
+        const ks=by("event_kecil");
+        if(ks.length)q(".event-side").innerHTML=ks.map(x=>`<article class="event-small">${im(x.gambar_url,x.judul)}<div><span class="kicker">${esc(x.label||"")}</span><h3>${esc(x.judul)}</h3><p>${esc(x.deskripsi||"")}</p></div></article>`).join("");
+        const pr=by("promo");
+        if(pr.length)q(".promos").innerHTML=pr.map(x=>`<article class="promo-card">${im(x.gambar_url,x.judul)}<div class="promo-body"><span class="sponsor-label">${esc(x.label||"")}</span><h3>${esc(x.judul)}</h3><p>${esc(x.deskripsi||"")}</p>${lk("text-link",x)}</div></article>`).join("");
+        const kn=by("kenangan");
+        if(kn.length)q(".memory-grid").innerHTML=kn.map(x=>`<article class="memory-card">${im(x.gambar_url,x.judul)}<div class="memory-body"><small>${esc(x.label||"")}</small><h3>${esc(x.judul)}</h3><p>${esc(x.deskripsi||"")}</p>${lk("",x)}</div></article>`).join("");
+        const ps=await db.rpc("daftar_peserta_publik",{p_slug:SLUG});
+        if(ps.data&&ps.data.length){q("#pesertaList").innerHTML=ps.data.map(p=>`<div style="background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)"><div style="font-weight:850;font-size:17px">${esc(p.nama_panggung)}</div><div style="color:var(--muted);font-size:12px;margin-bottom:12px">${esc(p.kode_peserta)}${p.finalis?" · FINALIS":""}</div><a class="btn btn-gold" href="${esc(su(p.video_url))}" target="_blank" rel="noopener">Tonton ↗</a> <a class="btn btn-dark" href="peserta.html?peserta=${encodeURIComponent(p.kode_peserta)}#dukung">Dukung</a></div>`).join("");q("#peserta").style.display=""}
+      }catch(x){console.warn("Konten dinamis belum dimuat:",x.message)}
+    }
     (async()=>{
       try{
+        await muatKonten();
         const{data:k}=await db.from("competitions").select("fase,pendaftaran_dibuka,voting_dibuka").eq("slug",SLUG).maybeSingle();
-        if(k){document.getElementById("evStatus").textContent=FASE[k.fase]||"LOMBA KARAOKE";
-          if(k.pendaftaran_dibuka)document.getElementById("evDaftar").style.display="";
-          if(k.voting_dibuka)document.getElementById("evDukung").style.display="";}
+        if(k){const es=document.getElementById("evStatus");if(es&&es.dataset.auto==="1")es.textContent=FASE[k.fase]||es.textContent}
         const{data,error}=await db.rpc("klasemen_publik",{p_slug:SLUG});
         if(error)throw error;
         if(!data.length){rankList.innerHTML='<div class="rank-row"><div></div><div><div class="rank-name">Klasemen belum terbit</div><div class="rank-sub">Peringkat akan muncul setelah audisi berjalan.</div></div></div>';rankNote.textContent="Klasemen diperbarui setiap hari oleh admin.";return}
@@ -351,7 +380,7 @@
       event.preventDefault();showToast(link.dataset.demo);
     }));
     document.getElementById("contactBtn").addEventListener("click",event=>{
-      event.preventDefault();window.open("https://wa.me/"+WA_ADMIN,"_blank");
+      event.preventDefault();window.open("https://wa.me/"+(window.WA_NOW||WA_ADMIN),"_blank");
     });
     document.getElementById("year").textContent=new Date().getFullYear();
   </script>

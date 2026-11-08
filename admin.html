@@ -54,11 +54,11 @@ async function boot(){
  $('out').style.display='';$('out').onclick=async()=>{await db.auth.signOut();location.reload()};
  await load();$('ttl').textContent=`TKP · ${ME.nama} (${ME.role})`;
  if(ME.role==='juri'){nav.innerHTML='';juri();return}
- const T={ring:'Ringkasan',pes:'Peserta',vot:'Dukungan',kla:'Klasemen',tah:'Tahap & Final'};
+ const T={ring:'Ringkasan',pes:'Peserta',vot:'Dukungan',kla:'Klasemen',tah:'Tahap & Final',kon:'Konten Situs'};
  nav.innerHTML=Object.entries(T).map(([k,v])=>`<button data-t="${k}" class="${k===tab?'on':''}">${v}</button>`).join('');
  nav.onclick=e=>{if(e.target.dataset.t){tab=e.target.dataset.t;boot()}};render()}
 
-function render(){({ring,pes,vot,kla,tah})[tab]().catch(x=>app.innerHTML=`<div class="card err">${esc(x.message)}</div>`)}
+function render(){({ring,pes,vot,kla,tah,kon})[tab]().catch(x=>app.innerHTML=`<div class="card err">${esc(x.message)}</div>`)}
 
 async function ring(){await load();const r=(await rpc('admin_ringkasan',{p_slug:SLUG}))[0],k=(l,v)=>`<div class="k">${l}<b>${v}</b></div>`;
  app.innerHTML=`<div class="card"><h3>${esc(C.nama)} — tahap: ${esc(C.fase)}</h3><div class="grid">
@@ -125,6 +125,32 @@ async function tah(){await load();const ps=(await db.from('participants').select
  $('ar').onclick=()=>aksi(()=>rpc('admin_arsipkan',{p_slug:SLUG}));
  $('pv').onclick=()=>aksi(async()=>{const r=await rpc('admin_pratinjau_final',{p_slug:SLUG});
   $('hs').innerHTML=`<table><tr><th>#</th><th>Finalis</th><th>Nilai juri</th><th>Nilai vote</th><th>Akhir</th><th>Suara</th><th>Juri terkunci</th></tr>${r.map(x=>`<tr><td>${x.peringkat}</td><td>${esc(x.nama_panggung)}</td><td>${x.nilai_juri}</td><td>${x.nilai_vote}</td><td><b>${x.nilai_akhir}</b></td><td>${x.jumlah_suara}</td><td>${x.juri_terkunci}/${C.jumlah_juri}</td></tr>`).join('')}</table>`},'Pratinjau dimuat',false)}
+
+const JENIS={event:'Event unggulan',event_kecil:'Event kecil',promo:'Promosi',kenangan:'Kenangan'};
+const SET=[['hero_label','Hero: label kecil',1],['hero_judul','Hero: judul (Enter = baris baru)',2],['hero_teks','Hero: teks',2],['kontak_judul','Kontak: judul',1],['kontak_teks','Kontak: teks',2],['kontak_wa','Kontak: nomor WhatsApp (format 628xxxxxxxxxx)',1]];
+async function kon(){
+ const[{data:st},{data:it}]=await Promise.all([db.from('site_settings').select('*'),db.from('site_items').select('*').order('jenis').order('urutan')]);
+ window.IT=it;const S={};st.forEach(r=>S[r.key]=r.value);
+ app.innerHTML=`<div class="card"><h3>Teks halaman</h3><p style="color:var(--m)">Kosongkan untuk memakai teks bawaan.</p>${SET.map(([k,l,n])=>`<p><label>${l}<br><textarea id="st_${k}" rows="${n}" style="width:100%;font:inherit;padding:8px;border:1px solid #cfd6e0;border-radius:8px">${esc(S[k]||'')}</textarea></label></p>`).join('')}<button class="b" id="svst">Simpan teks</button></div>
+ <div class="card"><h3>Isi konten beranda</h3><p>${Object.entries(JENIS).map(([k,v])=>`<button class="b s" onclick="itemForm(null,'${k}')">+ ${v}</button>`).join('')}</p><div id="fm"></div>
+ <table><tr><th>Jenis</th><th>Judul</th><th>Urut</th><th>Aksi</th></tr>${it.map((x,i)=>`<tr><td>${JENIS[x.jenis]}</td><td>${esc(x.judul)} ${x.tampil?'':'<span class="tag no">tersembunyi</span>'}</td><td>${x.urutan}</td><td><button class="b s" onclick="itemForm(${i})">Edit</button><button class="b s" onclick="itemTog(${i})">${x.tampil?'Sembunyikan':'Tampilkan'}</button><button class="b d" onclick="itemDel(${i})">Hapus</button></td></tr>`).join('')}</table>
+ <p style="color:var(--m)">Jika satu jenis belum punya item, beranda memakai isi bawaan. Event unggulan: hanya item pertama yang tampil.</p></div>`;
+ $('svst').onclick=()=>aksi(async()=>{const{error}=await db.from('site_settings').upsert(SET.map(([k])=>({key:k,value:$('st_'+k).value.trim()})));if(error)throw error},'Teks tersimpan',false)}
+window.itemForm=(i,j)=>{const x=i===null?{jenis:j,urutan:0,tampil:true}:IT[i],ev=x.jenis==='event',f=(id,l,v,t='text')=>`<label>${l}<br><input id="f_${id}" type="${t}" value="${esc(v??'')}" style="width:100%"></label>`;
+ $('fm').innerHTML=`<div class="card" style="background:#f9fafc"><h3>${x.id?'Edit':'Tambah'} ${JENIS[x.jenis]}</h3>${f('judul','Judul',x.judul)}${f('label',ev?'Label status (mis. LOMBA KARAOKE)':'Label kecil',x.label)}
+ <label>Deskripsi<br><textarea id="f_deskripsi" rows="3" style="width:100%">${esc(x.deskripsi||'')}</textarea></label>
+ <label>Gambar (unggah, maks 3 MB) <input id="f_file" type="file" accept="image/*"></label>${f('gambar_url','atau tempel link gambar',x.gambar_url)}
+ ${f('tombol_label','Teks tombol/tautan (opsional)',x.tombol_label)}${f('tombol_url','Alamat tombol (https://... atau #bagian)',x.tombol_url)}
+ ${ev?f('jadwal','Jadwal',x.jadwal)+f('lokasi','Lokasi',x.lokasi)+f('competition_slug','Kode lomba (isi sama dengan SLUG agar tombol Daftar/Dukung muncul)',x.competition_slug):''}
+ ${f('urutan','Urutan (kecil = lebih dulu)',x.urutan,'number')}<label><input id="f_tampil" type="checkbox" ${x.tampil?'checked':''}> Tampilkan</label>
+ <p><button class="b" id="fs">Simpan</button><button class="b s" onclick="$('fm').innerHTML=''">Batal</button></p></div>`;
+ $('fs').onclick=()=>aksi(async()=>{let url=$('f_gambar_url').value.trim();const fl=$('f_file').files[0];
+  if(fl){const ext=(fl.name.split('.').pop()||'jpg').toLowerCase(),path=`${x.jenis}/${crypto.randomUUID()}.${ext}`;const{error}=await db.storage.from('media').upload(path,fl,{contentType:fl.type});if(error)throw error;url=db.storage.from('media').getPublicUrl(path).data.publicUrl}
+  const g=id=>$('f_'+id)?.value.trim()||null,o={jenis:x.jenis,judul:g('judul'),label:g('label'),deskripsi:g('deskripsi'),gambar_url:url||null,tombol_label:g('tombol_label'),tombol_url:g('tombol_url'),jadwal:g('jadwal'),lokasi:g('lokasi'),competition_slug:g('competition_slug'),urutan:+$('f_urutan').value||0,tampil:$('f_tampil').checked};
+  if(!o.judul)throw new Error('Judul wajib diisi');
+  const{error}=x.id?await db.from('site_items').update(o).eq('id',x.id):await db.from('site_items').insert(o);if(error)throw error},'Tersimpan')}
+window.itemTog=i=>aksi(async()=>{const{error}=await db.from('site_items').update({tampil:!IT[i].tampil}).eq('id',IT[i].id);if(error)throw error});
+window.itemDel=i=>confirm('Hapus item ini?')&&aksi(async()=>{const{error}=await db.from('site_items').delete().eq('id',IT[i].id);if(error)throw error},'Dihapus');
 
 // ===== HALAMAN JURI =====
 async function juri(){
