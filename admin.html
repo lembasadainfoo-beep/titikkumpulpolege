@@ -16,13 +16,13 @@ button.b.s{background:#fff;border:1px solid #cfd6e0}button.b.d{background:#fbe7e
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.k{background:#f5f7fa;border-radius:10px;padding:10px}.k b{font-size:22px;display:block}
 .err{color:var(--r);font-weight:600;margin:8px 0}#toast{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 16px;border-radius:10px;display:none}
 </style></head><body>
-<header><b id="ttl">TKP Dashboard</b><nav id="nav"></nav><button class="b s" id="out" style="display:none">Keluar</button></header>
+<header><b id="ttl">TKP Dashboard</b><select id="evSel" style="display:none"></select><nav id="nav"></nav><button class="b s" id="out" style="display:none">Keluar</button></header>
 <main id="app"></main><div id="toast"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
 <script>
 // ====== ISI BAGIAN INI ======
 const SUPABASE_URL='https://qimygujcelfedblitmkw.supabase.co', ANON_KEY='sb_publishable_DgEqYjFW5UeHWfDESqG60g_0MTofHXU';
-const SLUG='tkp-musim-1';
+let SLUG='tkp-musim-1';
 const PESERTA_URL='https://DOMAINMU/peserta.html';   // alamat halaman peserta
 const TAG='@titikkumpulpolege #TitikKumpulPolege';
 // ============================
@@ -41,9 +41,10 @@ const WA={
  video_ok:p=>`Halo ${p.nama_panggung}, videomu sudah disetujui dan kamu resmi jadi peserta ${C.nama}! Ajak teman like, komen, dan dukung videomu ya. Cek statusmu: ${link(p.status_token)}`,
  video_tolak:p=>`Halo ${p.nama_panggung}, videomu belum bisa kami setujui: ${p.video_catatan||'-'}. Silakan kirim ulang di ${link(p.status_token)}`,
  bayar_tolak:p=>`Halo ${p.nama}, pembayaranmu belum bisa kami verifikasi: ${p.catatan_admin||'-'}. Cek di ${link(p.status_token)}`,
+ tagih:p=>`Halo ${p.nama}, pendaftaranmu di ${C.nama} sudah tercatat tapi pembayarannya belum kami terima. Lanjutkan pembayaran dan unggah bukti di sini: ${link(p.status_token)}`,
  ingatkan:p=>`Halo ${p.nama_panggung}, jangan lupa kirim video audisimu di ${link(p.status_token)} sebelum batas waktu ya!`
 };
-async function load(){C=(await db.from('competitions').select('*').eq('slug',SLUG).single()).data}
+async function load(){C=(await db.from('competitions').select('*').eq('slug',SLUG).maybeSingle()).data}
 
 async function boot(){
  const{data:{session}}=await db.auth.getSession();
@@ -52,13 +53,57 @@ async function boot(){
  ME=(await db.from('profiles').select('role,nama').eq('id',session.user.id).single()).data;
  if(!ME){app.innerHTML='<div class="card err">Akun ini belum terdaftar sebagai admin/juri.</div>';return}
  $('out').style.display='';$('out').onclick=async()=>{await db.auth.signOut();location.reload()};
- await load();$('ttl').textContent=`TKP · ${ME.nama} (${ME.role})`;
+ await pilihEvent();await load();$('ttl').textContent=`TKP · ${ME.nama} (${ME.role})`;
  if(ME.role==='juri'){nav.innerHTML='';juri();return}
- const T={ring:'Ringkasan',pes:'Peserta',vot:'Dukungan',kla:'Klasemen',tah:'Tahap & Final',kon:'Konten Situs'};
+ if(!C)tab='evt';
+ const T={evt:'Event',ring:'Ringkasan',pes:'Peserta',vot:'Dukungan',kla:'Klasemen',tah:'Tahap & Final',nil:'Penilaian',kon:'Konten Situs'};
  nav.innerHTML=Object.entries(T).map(([k,v])=>`<button data-t="${k}" class="${k===tab?'on':''}">${v}</button>`).join('');
- nav.onclick=e=>{if(e.target.dataset.t){tab=e.target.dataset.t;boot()}};render()}
+ nav.onclick=e=>{if(e.target.dataset.t){tab=e.target.dataset.t;boot()}};
+ const es=$('evSel');if(EVL.length){es.style.display='';es.innerHTML=EVL.map(x=>`<option value="${esc(x.slug)}" ${x.slug===SLUG?'selected':''}>${esc(x.nama)}</option>`).join('');es.onchange=()=>{SLUG=es.value;try{localStorage.setItem('tkp_slug',SLUG)}catch(e){}boot()}}
+ render()}
 
-function render(){({ring,pes,vot,kla,tah,kon})[tab]().catch(x=>app.innerHTML=`<div class="card err">${esc(x.message)}</div>`)}
+function render(){({evt,ring,pes,vot,kla,tah,nil,kon})[tab]().catch(x=>app.innerHTML=`<div class="card err">${esc(x.message)}</div>`)}
+
+async function pilihEvent(){const{data:ls}=await db.from('competitions').select('slug,nama,fase').order('dibuat_at',{ascending:false});window.EVL=ls||[];
+ let s=null;try{s=localStorage.getItem('tkp_slug')}catch(e){}
+ if(!EVL.some(x=>x.slug===s)){const{data:a}=await db.from('site_settings').select('value').eq('key','event_aktif').maybeSingle();s=a&&EVL.some(x=>x.slug===a.value)?a.value:(EVL[0]?EVL[0].slug:SLUG)}
+ SLUG=s}
+const slugify=t=>t.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+async function evt(){
+ const{data:ls}=await db.from('competitions').select('*').order('dibuat_at',{ascending:false});window.EVL=ls||[];
+ const{data:ak}=await db.from('site_settings').select('value').eq('key','event_aktif').maybeSingle(),aktif=ak?ak.value:'';
+ const grp=(t,f)=>{const r=EVL.filter(x=>f.includes(x.fase));return `<h4>${t} (${r.length})</h4>`+(r.length?`<table><tr><th>Event</th><th>Tahap</th><th>Aksi</th></tr>${r.map(x=>`<tr><td><b>${esc(x.nama)}</b><br><span style="color:var(--m)">${esc(x.slug)}</span> ${x.slug===aktif?'<span class="tag ok">tampil di situs</span>':''} ${x.slug===SLUG?'<span class="tag">sedang dikelola</span>':''}</td><td>${esc(x.fase.replace(/_/g,' '))}</td><td>${x.slug!==SLUG?`<button class="b s" onclick="kelola('${x.slug}')">Kelola</button>`:''}${x.slug!==aktif?`<button class="b s" onclick="jadikanAktif('${x.slug}')">Tampilkan di situs</button>`:''}${x.fase==='belum_mulai'?`<button class="b" onclick="mulaiEvent('${x.slug}')">Mulai &amp; buka pendaftaran</button>`:''}</td></tr>`).join('')}</table>`:'<p style="color:var(--m)">Belum ada.</p>')};
+ const ta=(id,v,n)=>`<textarea id="${id}" rows="${n}" style="width:100%;font:inherit;padding:8px;border:1px solid #cfd6e0;border-radius:8px">${v}</textarea>`,f=(id,l,v,t='text')=>`<label>${l}<br><input id="${id}" type="${t}" value="${v}" style="width:100%"></label>`;
+ app.innerHTML=`<div class="card"><h3>Daftar event</h3><p style="color:var(--m)">"Kelola" mengganti event yang sedang diatur di dashboard. "Tampilkan di situs" menentukan event yang dipakai halaman daftar, dukung, dan klasemen.</p>${grp('Sedang berjalan',['audisi','finalis_ditetapkan','final'])}${grp('Akan segera',['belum_mulai'])}${grp('Sudah selesai',['selesai','arsip'])}</div>
+ <div class="card"><h3>Buat event baru</h3>${f('e_nama','Nama event','Lomba Karaoke TKP Musim 1')}${f('e_slug','Kode event (otomatis dari nama, huruf kecil dan tanda -)','')}${f('e_pre','Awalan kode peserta (2-6 huruf/angka besar)','TKP')}
+ <div class="grid"><div>${f('e_hm','Biaya daftar mandiri (Rp)',10000,'number')}</div><div>${f('e_hr','Biaya daftar lewat teman (Rp)',5000,'number')}</div><div>${f('e_so','Finalis lolos otomatis',8,'number')}</div><div>${f('e_sw','Slot wild card',2,'number')}</div><div>${f('e_jj','Jumlah juri',3,'number')}</div></div>
+ ${f('e_bt','Batas kirim video audisi (opsional)','','datetime-local')}
+ <label>Paket dukungan (satu per baris: nama|harga|jumlah suara)<br>${ta('e_pk','Dukung 1 suara|5000|1\nPaket 3 suara|10000|3\nPaket 10 suara|25000|10',3)}</label>
+ <label>Kriteria juri (satu per baris: nama|bobot, total harus 100)<br>${ta('e_kr','Kualitas vokal|50\nTeknik dan ekspresi|30\nPenampilan|20',3)}</label>
+ <p><label><input type="checkbox" id="e_kartu" checked> Buat juga kartu event di beranda (bisa diubah di Konten Situs)</label><br><label><input type="checkbox" id="e_aktif" checked> Jadikan event yang tampil di situs</label></p>
+ <button class="b" id="e_save">Buat event</button></div>`;
+ $('e_nama').oninput=()=>{if(!$('e_slug').dataset.m)$('e_slug').value=slugify($('e_nama').value)};$('e_slug').oninput=()=>$('e_slug').dataset.m=1;
+ $('e_save').onclick=()=>aksi(async()=>{
+  const nama=$('e_nama').value.trim(),slug=$('e_slug').value.trim().toLowerCase()||slugify(nama),pre=$('e_pre').value.trim().toUpperCase();
+  if(!nama)throw new Error('Nama event wajib diisi');
+  if(!/^[a-z0-9-]+$/.test(slug))throw new Error('Kode event hanya boleh huruf kecil, angka, dan tanda -');
+  if(!/^[A-Z0-9]{2,6}$/.test(pre))throw new Error('Awalan kode peserta 2-6 huruf atau angka besar');
+  const parse=t=>t.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>l.split('|').map(x=>x.trim()));
+  const pk=parse($('e_pk').value).map(([n,h,s],i)=>({nama:n,harga:+h,jumlah_suara:+s,urutan:i+1})),kr=parse($('e_kr').value).map(([n,b],i)=>({nama:n,bobot:+b,urutan:i+1}));
+  if(!pk.length||pk.some(x=>!x.nama||!(x.harga>0)||!(x.jumlah_suara>0)))throw new Error('Format paket: nama|harga|jumlah suara, satu per baris');
+  if(!kr.length||kr.some(x=>!x.nama||!(x.bobot>0))||kr.reduce((a,x)=>a+x.bobot,0)!==100)throw new Error('Kriteria juri: nama|bobot, satu per baris, total bobot harus 100');
+  const bt=$('e_bt').value;
+  const{data:c,error}=await db.from('competitions').insert({slug,nama,kode_prefix:pre,harga_daftar_mandiri:+$('e_hm').value,harga_daftar_referral:+$('e_hr').value,jumlah_slot_otomatis:+$('e_so').value,jumlah_slot_wildcard:+$('e_sw').value,jumlah_juri:+$('e_jj').value,batas_unggah_video:bt?new Date(bt).toISOString():null}).select().single();
+  if(error)throw new Error(error.message.includes('duplicate')?'Kode event sudah dipakai event lain':error.message);
+  const r1=await db.from('vote_packages').insert(pk.map(x=>({...x,competition_id:c.id})));if(r1.error)throw r1.error;
+  const r2=await db.from('judging_criteria').insert(kr.map(x=>({...x,competition_id:c.id})));if(r2.error)throw r2.error;
+  if($('e_kartu').checked){const r3=await db.from('site_items').insert({jenis:'event',judul:nama,label:'LOMBA',deskripsi:'Ikuti perkembangan lomba dan dukung peserta favoritmu.',competition_slug:slug,urutan:0});if(r3.error)throw r3.error}
+  if($('e_aktif').checked||!EVL.length){const r4=await db.from('site_settings').upsert({key:'event_aktif',value:slug});if(r4.error)throw r4.error}
+  SLUG=slug;try{localStorage.setItem('tkp_slug',slug)}catch(e){}
+ },'Event dibuat. Klik "Mulai & buka pendaftaran" saat siap.')}
+window.kelola=s=>{SLUG=s;try{localStorage.setItem('tkp_slug',s)}catch(e){}boot()};
+window.jadikanAktif=s=>aksi(async()=>{const{error}=await db.from('site_settings').upsert({key:'event_aktif',value:s});if(error)throw error},'Event ditampilkan di situs');
+window.mulaiEvent=s=>confirm('Mulai audisi dan buka pendaftaran untuk event ini?')&&aksi(async()=>{await rpc('admin_ubah_fase',{p_slug:s,p_fase:'audisi'});const{error}=await db.from('competitions').update({pendaftaran_dibuka:true}).eq('slug',s);if(error)throw error},'Pendaftaran dibuka. Buka voting di tab Tahap & Final saat sudah ada peserta resmi.');
 
 async function ring(){await load();const r=(await rpc('admin_ringkasan',{p_slug:SLUG}))[0],k=(l,v)=>`<div class="k">${l}<b>${v}</b></div>`;
  app.innerHTML=`<div class="card"><h3>${esc(C.nama)} — tahap: ${esc(C.fase)}</h3><div class="grid">
@@ -76,15 +121,16 @@ async function pes(){const{data}=await db.from('participants').select('*').eq('c
  <td>${st(p.status)}<br>${p.bukti_bayar_path?`<a href="#" onclick="bukti('${p.bukti_bayar_path}');return false">Lihat bukti</a>`:''}</td>
  <td>${st(p.video_status)}<br>${p.video_url?`<a href="${esc(p.video_url)}" target="_blank" rel="noopener">Buka video</a>`:''}</td>
  <td>${p.status!=='terverifikasi'?`<button class="b" onclick="act(${i},'ver')">Verifikasi</button><button class="b d" onclick="act(${i},'tol')">Tolak</button>`:''}
- ${p.video_status==='disetujui'?`<button class="b s" onclick="act(${i},'wc')">${p.wildcard_calon?'Cabut wild card':'Beri wild card'}</button>`:''}
+ ${p.video_status==='disetujui'?`<button class="b s" onclick="act(${i},'wc')">${p.wildcard_calon?'Cabut wild card':'Beri wild card'}</button><button class="b s" onclick="act(${i},'vopen')">Buka kunci video</button>`:''}
  ${p.video_status==='dikirim'?`<button class="b" onclick="act(${i},'vok')">Setujui video</button><button class="b d" onclick="act(${i},'vno')">Tolak video</button>`:''}
- <select id="w${i}"><option value="terdaftar">WA: terdaftar</option><option value="video_ok">WA: video disetujui</option><option value="video_tolak">WA: video ditolak</option><option value="bayar_tolak">WA: bayar ditolak</option><option value="ingatkan">WA: pengingat</option></select><button class="b s" onclick="act(${i},'wa')">Kirim</button></td></tr>`).join('')}</table></div>`;
+ <select id="w${i}"><option value="terdaftar">WA: terdaftar</option><option value="video_ok">WA: video disetujui</option><option value="video_tolak">WA: video ditolak</option><option value="bayar_tolak">WA: bayar ditolak</option><option value="tagih">WA: tagih pembayaran</option><option value="ingatkan">WA: pengingat</option></select><button class="b s" onclick="act(${i},'wa')">Kirim</button></td></tr>`).join('')}</table></div>`;
  $('q').oninput=e=>document.querySelectorAll('#t tr[data-s]').forEach(r=>r.style.display=r.dataset.s.includes(e.target.value.toLowerCase())?'':'none')}
 window.act=async(i,a)=>{const p=P[i];
  if(a==='ver')aksi(()=>rpc('admin_verifikasi_peserta',{p_id:p.id}),'Terverifikasi. Kirim WA terdaftar dari tombol Kirim.');
  if(a==='tol'){const r=prompt('Alasan menolak pembayaran:');if(r)aksi(()=>rpc('admin_tolak_peserta',{p_id:p.id,p_alasan:r}))}
  if(a==='vok')aksi(()=>rpc('admin_setujui_video',{p_id:p.id}),'Video disetujui');
  if(a==='vno'){const r=prompt('Alasan menolak video (mis. tag/kode belum ada):');if(r)aksi(()=>rpc('admin_tolak_video',{p_id:p.id,p_alasan:r}))}
+ if(a==='vopen'){const r=prompt('Alasan membuka penggantian video:','Silakan kirim ulang video yang benar');if(r)aksi(()=>rpc('admin_tolak_video',{p_id:p.id,p_alasan:r}),'Peserta bisa mengirim ulang video')}
  if(a==='wc')aksi(()=>rpc('admin_set_wildcard',{p_id:p.id,p_aktif:!p.wildcard_calon}),p.wildcard_calon?'Wild card dicabut':'Wild card diberikan');
  if(a==='wa'){const k=$('w'+i).value;waOpen(p.no_wa,WA[k](p))}};
 
@@ -126,16 +172,18 @@ async function tah(){await load();const ps=(await db.from('participants').select
  $('pv').onclick=()=>aksi(async()=>{const r=await rpc('admin_pratinjau_final',{p_slug:SLUG});
   $('hs').innerHTML=`<table><tr><th>#</th><th>Finalis</th><th>Nilai juri</th><th>Nilai vote</th><th>Akhir</th><th>Suara</th><th>Juri terkunci</th></tr>${r.map(x=>`<tr><td>${x.peringkat}</td><td>${esc(x.nama_panggung)}</td><td>${x.nilai_juri}</td><td>${x.nilai_vote}</td><td><b>${x.nilai_akhir}</b></td><td>${x.jumlah_suara}</td><td>${x.juri_terkunci}/${C.jumlah_juri}</td></tr>`).join('')}</table>`},'Pratinjau dimuat',false)}
 
+const BAGIAN={event:'Event — kartu besar',event_kecil:'Event — kartu samping',promo:'Promosi & Usaha Lokal',kenangan:'Kenangan & Cerita'};
 const JENIS={event:'Event unggulan',event_kecil:'Event kecil',promo:'Promosi',kenangan:'Kenangan'};
-const SET=[['hero_label','Hero: label kecil',1],['hero_judul','Hero: judul (Enter = baris baru)',2],['hero_teks','Hero: teks',2],['kontak_judul','Kontak: judul',1],['kontak_teks','Kontak: teks',2],['kontak_wa','Kontak: nomor WhatsApp (format 628xxxxxxxxxx)',1]];
+const SET=[['bayar_info','Info pembayaran untuk peserta dan pendukung (rekening / e-wallet)',3],['bayar_qris','Gambar QRIS (link, atau pakai tombol unggah di bawah)',1],['hero_label','Foto utama di atas: label kecil',1],['hero_judul','Foto utama di atas: judul (Enter = baris baru)',2],['hero_teks','Foto utama di atas: teks',2],['kontak_judul','Banner kontak (bagian bawah): judul',1],['kontak_teks','Banner kontak: teks',2],['kontak_wa','Banner kontak: nomor WhatsApp tombol Hubungi (628xxxxxxxxxx)',1]];
 async function kon(){
  const[{data:st},{data:it}]=await Promise.all([db.from('site_settings').select('*'),db.from('site_items').select('*').order('jenis').order('urutan')]);
  window.IT=it;const S={};st.forEach(r=>S[r.key]=r.value);
- app.innerHTML=`<div class="card"><h3>Teks halaman</h3><p style="color:var(--m)">Kosongkan untuk memakai teks bawaan.</p>${SET.map(([k,l,n])=>`<p><label>${l}<br><textarea id="st_${k}" rows="${n}" style="width:100%;font:inherit;padding:8px;border:1px solid #cfd6e0;border-radius:8px">${esc(S[k]||'')}</textarea></label></p>`).join('')}<button class="b" id="svst">Simpan teks</button></div>
+ app.innerHTML=`<div class="card"><h3>Teks halaman</h3><p style="color:var(--m)">Kosongkan untuk memakai teks bawaan.</p>${SET.map(([k,l,n])=>`<p><label>${l}<br><textarea id="st_${k}" rows="${n}" style="width:100%;font:inherit;padding:8px;border:1px solid #cfd6e0;border-radius:8px">${esc(S[k]||'')}</textarea></label></p>`).join('')}<p><label>Unggah gambar QRIS <input type="file" id="qf" accept="image/*"></label></p><button class="b" id="svst">Simpan teks</button></div>
  <div class="card"><h3>Isi konten beranda</h3><p>${Object.entries(JENIS).map(([k,v])=>`<button class="b s" onclick="itemForm(null,'${k}')">+ ${v}</button>`).join('')}</p><div id="fm"></div>
- <table><tr><th>Jenis</th><th>Judul</th><th>Urut</th><th>Aksi</th></tr>${it.map((x,i)=>`<tr><td>${JENIS[x.jenis]}</td><td>${esc(x.judul)} ${x.tampil?'':'<span class="tag no">tersembunyi</span>'}</td><td>${x.urutan}</td><td><button class="b s" onclick="itemForm(${i})">Edit</button><button class="b s" onclick="itemTog(${i})">${x.tampil?'Sembunyikan':'Tampilkan'}</button><button class="b d" onclick="itemDel(${i})">Hapus</button></td></tr>`).join('')}</table>
- <p style="color:var(--m)">Jika satu jenis belum punya item, beranda memakai isi bawaan. Event unggulan: hanya item pertama yang tampil.</p></div>`;
- $('svst').onclick=()=>aksi(async()=>{const{error}=await db.from('site_settings').upsert(SET.map(([k])=>({key:k,value:$('st_'+k).value.trim()})));if(error)throw error},'Teks tersimpan',false)}
+ <table><tr><th>Bagian di beranda</th><th>Judul</th><th>Urut</th><th>Aksi</th></tr>${it.map((x,i)=>`<tr><td>${BAGIAN[x.jenis]}</td><td>${x.gambar_url?`<img src="${esc(x.gambar_url)}" style="width:54px;height:40px;object-fit:cover;border-radius:6px;vertical-align:middle"> `:''}${esc(x.judul)} ${x.tampil?'':'<span class="tag no">tersembunyi</span>'} ${x.selesai?'<span class="tag ok">selesai → Kenangan</span>':''}</td><td>${x.urutan}</td><td><button class="b s" onclick="itemForm(${i})">Edit</button>${x.jenis.startsWith('event')?`<button class="b s" onclick="itemSelesai(${i})">${x.selesai?'Buka lagi':'Tandai selesai'}</button>`:''}<button class="b s" onclick="itemTog(${i})">${x.tampil?'Sembunyikan':'Tampilkan'}</button><button class="b d" onclick="itemDel(${i})">Hapus</button></td></tr>`).join('')}</table>
+ <p style="color:var(--m)">Jika satu jenis belum punya item, beranda memakai isi bawaan. Event unggulan: hanya item pertama yang belum selesai yang tampil. Event yang ditandai selesai, atau yang kode lombanya sudah berstatus selesai/arsip, otomatis pindah ke Kenangan.</p></div>`;
+ $('svst').onclick=()=>aksi(async()=>{const{error}=await db.from('site_settings').upsert(SET.map(([k])=>({key:k,value:$('st_'+k).value.trim()})));if(error)throw error},'Teks tersimpan',false);
+ $('qf').onchange=async e=>{try{const fl=e.target.files[0];if(!fl)return;const ext=(fl.name.split('.').pop()||'png').toLowerCase(),path=`qris/${crypto.randomUUID()}.${ext}`;const{error}=await db.storage.from('media').upload(path,fl,{contentType:fl.type});if(error)throw error;$('st_bayar_qris').value=db.storage.from('media').getPublicUrl(path).data.publicUrl;toast('Gambar terunggah. Klik Simpan teks.')}catch(x){alert(x.message)}}}
 window.itemForm=(i,j)=>{const x=i===null?{jenis:j,urutan:0,tampil:true}:IT[i],ev=x.jenis==='event',f=(id,l,v,t='text')=>`<label>${l}<br><input id="f_${id}" type="${t}" value="${esc(v??'')}" style="width:100%"></label>`;
  $('fm').innerHTML=`<div class="card" style="background:#f9fafc"><h3>${x.id?'Edit':'Tambah'} ${JENIS[x.jenis]}</h3>${f('judul','Judul',x.judul)}${f('label',ev?'Label status (mis. LOMBA KARAOKE)':'Label kecil',x.label)}
  <label>Deskripsi<br><textarea id="f_deskripsi" rows="3" style="width:100%">${esc(x.deskripsi||'')}</textarea></label>
@@ -149,22 +197,34 @@ window.itemForm=(i,j)=>{const x=i===null?{jenis:j,urutan:0,tampil:true}:IT[i],ev
   const g=id=>$('f_'+id)?.value.trim()||null,o={jenis:x.jenis,judul:g('judul'),label:g('label'),deskripsi:g('deskripsi'),gambar_url:url||null,tombol_label:g('tombol_label'),tombol_url:g('tombol_url'),jadwal:g('jadwal'),lokasi:g('lokasi'),competition_slug:g('competition_slug'),urutan:+$('f_urutan').value||0,tampil:$('f_tampil').checked};
   if(!o.judul)throw new Error('Judul wajib diisi');
   const{error}=x.id?await db.from('site_items').update(o).eq('id',x.id):await db.from('site_items').insert(o);if(error)throw error},'Tersimpan')}
+window.itemSelesai=i=>confirm(IT[i].selesai?'Buka event ini lagi?':'Tandai event ini selesai? Event pindah otomatis ke Kenangan di beranda.')&&aksi(async()=>{const{error}=await db.from('site_items').update({selesai:!IT[i].selesai}).eq('id',IT[i].id);if(error)throw error},'Tersimpan');
 window.itemTog=i=>aksi(async()=>{const{error}=await db.from('site_items').update({tampil:!IT[i].tampil}).eq('id',IT[i].id);if(error)throw error});
 window.itemDel=i=>confirm('Hapus item ini?')&&aksi(async()=>{const{error}=await db.from('site_items').delete().eq('id',IT[i].id);if(error)throw error},'Dihapus');
 
+async function nil(){clearInterval(window.TI);window.TI=setInterval(()=>tab==='nil'&&nil().catch(()=>{}),10000);
+ const r=await rpc('admin_progres_penilaian',{p_slug:SLUG});
+ app.innerHTML=`<div class="card"><h3>Penilaian juri: pilih peserta yang tampil di layar juri</h3><p style="color:var(--m)">Hanya peserta yang dipilih yang muncul di halaman juri, dan sistem menolak nilai untuk peserta lain. Pastikan semua juri sudah mengirim nilai sebelum pindah ke peserta berikutnya.</p>${C.fase!=='final'?'<p class="err">Tahap belum final. Mulai final dulu di tab Tahap &amp; Final.</p>':''}
+ <table><tr><th>Peserta</th><th>Nilai terkirim</th><th>Aksi</th></tr>${r.map(x=>`<tr><td><b>${esc(x.nama_panggung)}</b> ${esc(x.kode_peserta||'')} ${x.aktif?'<span class="tag ok">tampil di layar juri</span>':''}</td><td>${x.juri_terkirim}/${x.jumlah_juri} juri</td><td>${x.aktif?`<button class="b s" onclick="setAktif(null)">Kosongkan layar juri</button>`:`<button class="b" onclick="setAktif('${x.participant_id}')">Tampilkan ke juri</button>`}</td></tr>`).join('')}</table><button class="b s" onclick="render()">Muat ulang</button> <span style="color:var(--m)">Diperbarui otomatis tiap 10 detik.</span></div>`}
+window.setAktif=id=>aksi(()=>rpc('admin_set_peserta_aktif',{p_slug:SLUG,p_peserta:id}),id?'Peserta ditampilkan ke juri':'Layar juri dikosongkan');
+
 // ===== HALAMAN JURI =====
 async function juri(){
- const[fin,kr,own]=await Promise.all([rpc('juri_daftar_finalis',{p_slug:SLUG}),db.from('judging_criteria').select('*').eq('competition_id',C.id).order('urutan'),db.from('juri_scores').select('*').eq('competition_id',C.id)]);
- const K=kr.data,S={};own.data.forEach(s=>S[s.participant_id+s.criterion_id]=s);const lock=own.data.length&&own.data.every(s=>s.locked);
+ await load();
+ const[ak,kr]=await Promise.all([rpc('juri_peserta_aktif',{p_slug:SLUG}),db.from('judging_criteria').select('*').eq('competition_id',C.id).order('urutan')]);
+ const K=kr.data,p=ak[0];window.JK=p?p.peserta_id:null;
+ clearInterval(window.JT);window.JT=setInterval(async()=>{try{const a=(await rpc('juri_peserta_aktif',{p_slug:SLUG}))[0];if((a?a.peserta_id:null)!==JK)juri()}catch(x){}},5000);
  if(C.fase!=='final'){app.innerHTML='<div class="card">Penilaian belum dibuka. Tunggu admin memulai tahap final.</div>';return}
- app.innerHTML=`<div class="card"><h3>Penilaian finalis</h3><p>Nilai 0–100 per kriteria. ${lock?'<b>Nilaimu sudah dikunci.</b>':'Simpan dulu, kunci setelah semua terisi.'}</p>
- <table><tr><th>Finalis</th>${K.map(k=>`<th>${esc(k.nama)} (${k.bobot}%)</th>`).join('')}<th>Nilai kamu</th></tr>${fin.map((f,i)=>`<tr><td><b>${esc(f.nama_panggung)}</b> ${esc(f.kode_peserta)}<br><a href="${esc(f.video_url)}" target="_blank" rel="noopener">Tonton video</a></td>
- ${K.map((k,j)=>`<td><input type="number" min="0" max="100" step="0.5" id="s${i}_${j}" value="${S[f.peserta_id+k.id]?.skor??''}" ${lock?'disabled':''} oninput="hit(${i})"></td>`).join('')}<td><b id="h${i}">-</b></td></tr>`).join('')}</table>
- ${lock?'':'<button class="b s" id="sv">Simpan nilai</button><button class="b" id="kc">Kunci nilai</button>'}</div>`;
- window.hit=i=>{let t=0,ok=true;K.forEach((k,j)=>{const v=$(`s${i}_${j}`).value;if(v==='')ok=false;else t+=v*k.bobot/100});$('h'+i).textContent=ok?t.toFixed(2):'-'};fin.forEach((_,i)=>hit(i));
- const simpan=async()=>{const rows=[];fin.forEach((f,i)=>K.forEach((k,j)=>{const v=$(`s${i}_${j}`).value;if(v!=='')rows.push({competition_id:C.id,participant_id:f.peserta_id,juri_id:(S0||0),criterion_id:k.id,skor:+v})}));
-  const{data:{user}}=await db.auth.getUser();rows.forEach(r=>r.juri_id=user.id);
-  const{error}=await db.from('juri_scores').upsert(rows,{onConflict:'participant_id,juri_id,criterion_id'});if(error)throw error};
- const S0=0;if(!lock){$('sv').onclick=()=>aksi(simpan,'Nilai tersimpan',false);$('kc').onclick=()=>confirm('Kunci nilai? Setelah dikunci tidak bisa diubah.')&&aksi(async()=>{await simpan();await rpc('juri_kunci_nilai',{p_slug:SLUG})},'Nilai dikunci',false).then(()=>juri())}}
+ if(!p){app.innerHTML='<div class="card"><h3>Menunggu peserta berikutnya</h3><p>Admin belum menampilkan peserta. Halaman ini berganti otomatis.</p></div>';return}
+ const{data:own}=await db.from('juri_scores').select('*').eq('participant_id',p.peserta_id),S={};own.forEach(s=>S[s.criterion_id]=s);const lock=p.sudah_dikirim;
+ app.innerHTML=`<div class="card"><span class="tag">Sedang dinilai</span><h2 style="margin:8px 0">${esc(p.nama_panggung)}</h2><p>Nomor peserta: <b>${esc(p.kode_peserta)}</b> · <a href="${esc(p.video_url)}" target="_blank" rel="noopener">Tonton video</a></p>
+ <table>${K.map((k,j)=>`<tr><td><b>${esc(k.nama)}</b> <span style="color:var(--m)">(${k.bobot}%)</span></td><td><input type="number" min="0" max="100" step="0.5" id="s${j}" value="${S[k.id]?.skor??''}" ${lock?'disabled':''} oninput="hit()" style="width:110px"></td></tr>`).join('')}</table>
+ <p>Nilai kamu untuk peserta ini: <b id="hs" style="font-size:22px">-</b></p>
+ ${lock?'<p><span class="tag ok">Nilai sudah dikirim ✓</span> Tunggu peserta berikutnya.</p>':'<button class="b" id="kr">Kirim nilai</button>'}</div>`;
+ window.hit=()=>{let t=0,ok=true;K.forEach((k,j)=>{const v=$('s'+j).value;if(v==='')ok=false;else t+=v*k.bobot/100});$('hs').textContent=ok?t.toFixed(2):'-'};hit();
+ if(!lock)$('kr').onclick=()=>confirm('Kirim nilai untuk '+p.nama_panggung+'? Setelah dikirim tidak bisa diubah.')&&aksi(async()=>{
+  if(K.some((k,j)=>$('s'+j).value===''))throw new Error('Isi semua kriteria dulu');
+  const{data:{user}}=await db.auth.getUser();
+  const{error}=await db.from('juri_scores').upsert(K.map((k,j)=>({competition_id:C.id,participant_id:p.peserta_id,juri_id:user.id,criterion_id:k.id,skor:+$('s'+j).value})),{onConflict:'participant_id,juri_id,criterion_id'});if(error)throw error;
+  await rpc('juri_kirim_nilai',{p_slug:SLUG})},'Nilai terkirim',false).then(()=>juri())}
 boot();
 </script></body></html>

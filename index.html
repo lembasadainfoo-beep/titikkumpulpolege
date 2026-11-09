@@ -309,16 +309,20 @@
   <script>
     // ====== ISI BAGIAN INI ======
     const SUPABASE_URL="https://qimygujcelfedblitmkw.supabase.co", ANON_KEY="sb_publishable_DgEqYjFW5UeHWfDESqG60g_0MTofHXU";
-    const SLUG="tkp-musim-1", WA_ADMIN="6281234567890";
+    let SLUG="tkp-musim-1";const WA_ADMIN="6281234567890";
     // ============================
     const db=supabase.createClient(SUPABASE_URL,ANON_KEY);
     const esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
     const rankList=document.getElementById("rankList"),rankNote=document.getElementById("rankNote");
     const FASE={belum_mulai:"SEGERA HADIR",audisi:"AUDISI BERLANGSUNG",finalis_ditetapkan:"FINALIS DITETAPKAN",final:"BABAK FINAL",selesai:"LOMBA SELESAI",arsip:"ARSIP"};
+async function barLanjut(){try{const t=localStorage.getItem("tkp_token");if(!t)return;const{data}=await db.rpc("status_peserta",{p_token:t});const s=data&&data[0];if(!s)return;
+      let tx=null;if(s.status==="menunggu_bayar")tx="Lanjutkan pembayaran pendaftaran";else if(s.status==="menunggu_verifikasi")tx="Cek status pendaftaran";else if(s.status==="terverifikasi"&&s.video_status!=="disetujui")tx="Kirim video audisimu";
+      if(!tx)return;const a=document.createElement("a");a.href="peserta.html#status/"+t;a.textContent=tx+" →";a.style.cssText="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#101827;color:#f5d895;padding:13px 20px;border-radius:999px;font-weight:750;font-size:14px;z-index:60;box-shadow:0 10px 30px rgba(0,0,0,.25);text-decoration:none";document.body.appendChild(a)}catch(e){}}
+async function initSlug(){try{const{data}=await db.from("site_settings").select("value").eq("key","event_aktif").maybeSingle();if(data&&data.value)SLUG=data.value}catch(e){}}
     async function muatKonten(){
       try{
-        const[{data:st},{data:it}]=await Promise.all([db.from("site_settings").select("key,value"),db.from("site_items").select("*").eq("tampil",true).order("urutan").order("created_at")]);
-        const S={};(st||[]).forEach(r=>S[r.key]=r.value);
+        const[{data:st},{data:it},{data:cp}]=await Promise.all([db.from("site_settings").select("key,value"),db.from("site_items").select("*").eq("tampil",true).order("urutan").order("created_at"),db.from("competitions").select("slug,fase")]);
+        const S={};(st||[]).forEach(r=>S[r.key]=r.value);const F={};(cp||[]).forEach(c=>F[c.slug]=c.fase);const end=x=>x.selesai||(x.competition_slug&&["selesai","arsip"].includes(F[x.competition_slug]));
         const br=t=>esc(t).replace(/\n/g,"<br>"),su=u=>/^(https?:\/\/|\/|#|[\w.\/-]+\.html)/i.test(u||"")?u:"#",q=s=>document.querySelector(s),by=j=>(it||[]).filter(x=>x.jenis===j);
         const im=(u,a)=>u&&su(u)!=="#"?`<img src="${esc(u)}" alt="${esc(a)}" />`:"";
         const lk=(c,x)=>x.tombol_label?`<a class="${c}" href="${esc(su(x.tombol_url))}">${esc(x.tombol_label)} ↗</a>`:"";
@@ -326,13 +330,14 @@
         if(hc&&(S.hero_label||S.hero_judul||S.hero_teks))hc.innerHTML=`<small>${esc(S.hero_label||"COMMUNITY • EVENT • MOMENTS")}</small><h3>${br(S.hero_judul||"Setiap pertemuan\npunya cerita.")}</h3><p>${esc(S.hero_teks||"Mulai dari sini, jadi bagian dari keseruannya.")}</p>`;
         if(S.kontak_judul||S.kontak_teks)q(".join-inner>div").innerHTML=`<h2>${esc(S.kontak_judul||"Ada ide seru untuk Polege?")}</h2><p>${esc(S.kontak_teks||"")}</p>`;
         if(S.kontak_wa)window.WA_NOW=S.kontak_wa.replace(/\D/g,"");
-        const e=by("event")[0];
+        const ea=by("event"),e=ea.filter(x=>!end(x))[0];
+        if(!e&&ea.length)q(".event-feature").innerHTML='<div class="event-content"><span class="status">SEGERA HADIR</span><h3>Event berikutnya<br>segera hadir</h3><p>Pantau terus halaman ini untuk pengumuman event baru.</p></div>';
         if(e)q(".event-feature").innerHTML=`<div class="event-image">${im(e.gambar_url,e.judul)}</div><div class="event-content"><span class="status" id="evStatus" ${e.competition_slug===SLUG?'data-auto="1"':""}>${esc(e.label||"EVENT")}</span><h3>${br(e.judul)}</h3><p>${esc(e.deskripsi||"")}</p><div class="meta">${e.jadwal?`<span>◷ ${esc(e.jadwal)}</span>`:""}${e.lokasi?`<span>⌖ ${esc(e.lokasi)}</span>`:""}</div>${e.competition_slug?'<a class="btn btn-gold" href="peserta.html#daftar">Daftar jadi peserta <span>→</span></a> <a class="btn btn-gold" href="peserta.html#dukung">Dukung peserta <span>→</span></a> ':""}${lk("btn btn-gold",e)||'<a class="btn btn-gold" href="#ranking">Lihat Peringkat <span>→</span></a>'}</div>`;
-        const ks=by("event_kecil");
-        if(ks.length)q(".event-side").innerHTML=ks.map(x=>`<article class="event-small">${im(x.gambar_url,x.judul)}<div><span class="kicker">${esc(x.label||"")}</span><h3>${esc(x.judul)}</h3><p>${esc(x.deskripsi||"")}</p></div></article>`).join("");
+        const ka=by("event_kecil"),ks=ka.filter(x=>!end(x));
+        if(ka.length)q(".event-side").innerHTML=ks.map(x=>`<article class="event-small">${im(x.gambar_url,x.judul)}<div><span class="kicker">${esc(x.label||"")}</span><h3>${esc(x.judul)}</h3><p>${esc(x.deskripsi||"")}</p></div></article>`).join("");
         const pr=by("promo");
         if(pr.length)q(".promos").innerHTML=pr.map(x=>`<article class="promo-card">${im(x.gambar_url,x.judul)}<div class="promo-body"><span class="sponsor-label">${esc(x.label||"")}</span><h3>${esc(x.judul)}</h3><p>${esc(x.deskripsi||"")}</p>${lk("text-link",x)}</div></article>`).join("");
-        const kn=by("kenangan");
+        const ar=[...ea,...ka].filter(end).map(x=>({...x,label:"ARSIP EVENT • SELESAI",tombol_label:x.competition_slug?"Lihat hasil":x.tombol_label,tombol_url:x.competition_slug?"peserta.html#hasil/"+x.competition_slug:x.tombol_url})),kn=[...ar,...by("kenangan")];
         if(kn.length)q(".memory-grid").innerHTML=kn.map(x=>`<article class="memory-card">${im(x.gambar_url,x.judul)}<div class="memory-body"><small>${esc(x.label||"")}</small><h3>${esc(x.judul)}</h3><p>${esc(x.deskripsi||"")}</p>${lk("",x)}</div></article>`).join("");
         const ps=await db.rpc("daftar_peserta_publik",{p_slug:SLUG});
         if(ps.data&&ps.data.length){q("#pesertaList").innerHTML=ps.data.map(p=>`<div style="background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)"><div style="font-weight:850;font-size:17px">${esc(p.nama_panggung)}</div><div style="color:var(--muted);font-size:12px;margin-bottom:12px">${esc(p.kode_peserta)}${p.finalis?" · FINALIS":""}</div><a class="btn btn-gold" href="${esc(su(p.video_url))}" target="_blank" rel="noopener">Tonton ↗</a> <a class="btn btn-dark" href="peserta.html?peserta=${encodeURIComponent(p.kode_peserta)}#dukung">Dukung</a></div>`).join("");q("#peserta").style.display=""}
@@ -340,7 +345,7 @@
     }
     (async()=>{
       try{
-        await muatKonten();
+        await initSlug();await muatKonten();barLanjut();
         const{data:k}=await db.from("competitions").select("fase,pendaftaran_dibuka,voting_dibuka").eq("slug",SLUG).maybeSingle();
         if(k){const es=document.getElementById("evStatus");if(es&&es.dataset.auto==="1")es.textContent=FASE[k.fase]||es.textContent}
         const{data,error}=await db.rpc("klasemen_publik",{p_slug:SLUG});

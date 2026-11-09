@@ -48,7 +48,7 @@ footer{background:#0b1320;color:#c3ccda;padding:30px 0 20px;font-size:12px}foote
 <script>
 // ====== ISI BAGIAN INI ======
 const SUPABASE_URL='https://qimygujcelfedblitmkw.supabase.co', ANON_KEY='sb_publishable_DgEqYjFW5UeHWfDESqG60g_0MTofHXU';
-const SLUG='tkp-musim-1';                       // slug kompetisi
+let SLUG='tkp-musim-1';                       // slug kompetisi
 const PEMBAYARAN='Transfer ke BANK 0000000000 a.n. NAMA PENYELENGGARA (atau QRIS/e-wallet)'; // info bayar
 const TAG='@titikkumpulpolege #TitikKumpulPolege';     // tag wajib di caption
 const WA_ADMIN='6281234567890';                         // nomor WA bantuan
@@ -69,7 +69,8 @@ async function home(){
  const{data:k,error:ke}=await db.from('competitions').select('nama,fase,pendaftaran_dibuka,voting_dibuka').eq('slug',SLUG).maybeSingle();
  if(!k)throw new Error(ke?ke.message:`Kompetisi dengan slug "${SLUG}" tidak ditemukan. Samakan SLUG di file ini dengan kolom slug di tabel competitions.`);
  const[kl,ps]=await Promise.all([rpc('klasemen_publik',{p_slug:SLUG}),rpc('daftar_peserta_publik',{p_slug:SLUG})]);
- app.innerHTML=`<div class="card"><h1>${esc(k.nama)}</h1><p class="m">Tahap: ${esc(k.fase.replace(/_/g,' '))}</p>
+ let tk='',vk='';try{tk=localStorage.getItem('tkp_token')||'';vk=localStorage.getItem('tkp_vtok')||''}catch(e){}
+ app.innerHTML=`${tk?`<div class="card"><b>Pendaftaranmu tersimpan di perangkat ini.</b><a class="btn" href="#status/${tk}">Lanjutkan / cek status pendaftaran</a></div>`:''}${vk?`<div class="card"><b>Dukungan terakhirmu tersimpan.</b><a class="btn" href="#voteok/${vk}">Cek / lanjutkan dukungan</a></div>`:''}<div class="card"><h1>${esc(k.nama)}</h1><p class="m">Tahap: ${esc(k.fase.replace(/_/g,' '))}</p>
  ${k.pendaftaran_dibuka?'<a class="btn" href="#daftar">Daftar jadi peserta</a>':''}
  ${k.voting_dibuka?'<a class="btn" href="#dukung">Dukung peserta favoritmu</a>':''}</div>
  <div class="card"><h2>Klasemen sementara</h2>${kl.length?kl.map(r=>`<div class="row"><span class="r">${r.wildcard?'WC':r.peringkat}</span><span style="flex:1"><b>${esc(r.nama_panggung)}</b> ${r.wildcard?'<span class="tag ok">Wild Card</span>':''} <span class="m">${esc(r.kode_peserta)}</span></span><span>${r.perubahan>0?'▲'+r.perubahan:r.perubahan<0?'▼'+-r.perubahan:''} <b>${r.nilai_audisi??'-'}</b></span></div>`).join('')+`<p class="m">Diperbarui ${new Date(kl[0].terbit_at).toLocaleString('id-ID')}</p>`:'<p class="m">Klasemen belum terbit.</p>'}</div>
@@ -89,38 +90,46 @@ async function daftar(){
  document.getElementById('go').onclick=async b=>{const g=document.getElementById('go'),e=document.getElementById('e');g.disabled=true;e.textContent='';
   try{const r=(await rpc('daftar_peserta',{p_slug:SLUG,p_nama:form('n'),p_nama_panggung:form('np'),p_no_wa:form('wa'),p_tiktok:form('tt'),p_facebook:form('fb'),p_ref_kode:ref||null}))[0];
    try{localStorage.setItem('tkp_token',r.status_token)}catch(x){}
-   bayar('peserta',r.peserta_id,r.jumlah_tagihan,r.status_token)}catch(x){e.textContent=x.message;g.disabled=false}}}
+   bayar('peserta',r.peserta_id,r.jumlah_tagihan,r.status_token,'',form('wa'))}catch(x){e.textContent=x.message;g.disabled=false}}}
 
-function bayar(folder,id,tagihan,token,info){
- app.innerHTML=`<div class="card"><h2>Langkah berikutnya: bayar</h2><p>Total yang dibayar: <b style="font-size:22px">${rp(tagihan)}</b></p>
- <div class="copy">${esc(PEMBAYARAN)}</div>${info?`<p class="m">${esc(info)}</p>`:''}
- <label>Unggah foto bukti pembayaran</label><input id="f" type="file" accept="image/*">
- <button id="up">Kirim bukti</button><div id="e" class="err"></div>
- <p class="m">Simpan link status kamu: <br><a href="#status/${token}">${location.origin+location.pathname}#status/${token}</a></p></div>`;
+window.salin=(t,b)=>navigator.clipboard.writeText(t).then(()=>{b.textContent='Tersalin ✓'});
+async function infoBayar(){let info=PEMBAYARAN,qris='';try{const{data}=await db.from('site_settings').select('key,value').in('key',['bayar_info','bayar_qris']);(data||[]).forEach(r=>{if(r.key==='bayar_info'&&r.value)info=r.value;if(r.key==='bayar_qris')qris=r.value})}catch(e){}return{info,qris}}
+async function bayar(folder,id,tagihan,token,info,wa){
+ const B=await infoBayar(),pg=location.origin+location.pathname,lnk=folder==='vote'?`${pg}#voteok/${token}`:`${pg}#status/${token}`;
+ let no=String(wa||'').replace(/\D/g,'');if(no.startsWith('0'))no='62'+no.slice(1);window.__info=B.info;window.__lnk=lnk;
+ app.innerHTML=`<div class="card"><h2>Langkah berikutnya: bayar</h2><p>Total yang dibayar: <b style="font-size:22px">${rp(tagihan)}</b></p><button class="sec" onclick="salin('${tagihan}',this)">Salin nominal</button>
+ ${B.qris?`<p style="text-align:center"><img src="${esc(B.qris)}" alt="QRIS" style="max-width:100%;border-radius:14px"></p>`:''}
+ <div class="copy">${esc(B.info)}</div><button class="sec" onclick="salin(__info,this)">Salin info pembayaran</button>${info?`<p class="m">${esc(info)}</p>`:''}
+ <label>Sudah bayar? Unggah foto bukti pembayaran</label><input id="f" type="file" accept="image/*"><button id="up">Kirim bukti</button><div id="e" class="err"></div></div>
+ <div class="card"><h2>Simpan link ini</h2><p class="m">Setelah membayar di aplikasi bank atau e-wallet, buka link ini lagi untuk mengunggah bukti. Link juga tersimpan di perangkat ini dan muncul sebagai tombol di beranda.</p><div class="copy">${lnk}</div><button class="sec" onclick="salin(__lnk,this)">Salin link</button>${no?`<a class="btn" href="https://wa.me/${no}?text=${encodeURIComponent('Link saya: '+lnk)}" target="_blank" rel="noopener">Kirim link ke WhatsApp-ku</a>`:''}</div>`;
  document.getElementById('up').onclick=async()=>{const e=document.getElementById('e');e.textContent='';
-  try{const p=await upload(folder,id,document.getElementById('f').files[0]);
+  try{const p=await upload(folder,id||crypto.randomUUID(),document.getElementById('f').files[0]);
    await rpc(folder==='vote'?'lampirkan_bukti_vote':'lampirkan_bukti_peserta',{p_token:token,p_path:p});
    location.hash=folder==='vote'?'voteok/'+token:'status/'+token}catch(x){e.textContent=x.message}}}
 
 async function status(tok){
  const s=(await rpc('status_peserta',{p_token:tok}))[0];if(!s){app.innerHTML='<div class="card">Link tidak dikenali.</div>';return}
  const cap=`Audisi ${s.kompetisi_nama} | Kode ${s.kode_peserta} | ${TAG}`;
+ const vs=s.video_status,vf=`<label>Platform</label><select id="pl"><option value="tiktok" ${s.video_platform==='facebook'?'':'selected'}>TikTok</option><option value="facebook" ${s.video_platform==='facebook'?'selected':''}>Facebook</option></select><label>Link video</label><input id="u" value="${esc(s.video_url||'')}"><button id="kv">${vs==='belum_kirim'?'Kirim link video':'Simpan link video'}</button><div id="e" class="err"></div>`;
+ const vidPanel=vs==='disetujui'?`<p>${s.video_url?`<a href="${esc(s.video_url)}" target="_blank" rel="noopener">Buka videomu</a>`:''}</p><p class="m">Video sudah disetujui dan tidak bisa diganti. Kalau ada kesalahan, <a href="${wa('Halo admin, saya perlu mengganti video peserta '+s.kode_peserta)}">hubungi admin</a>.</p>`
+  :s.fase!=='audisi'?'':vs==='dikirim'?`${s.video_url?`<p><a href="${esc(s.video_url)}" target="_blank" rel="noopener">Buka link yang kamu kirim</a></p>`:''}<button class="sec" id="gl">Ganti link video</button><div id="gf" style="display:none">${vf}</div>`:vf;
  let h=`<div class="card"><h2>Halo, ${esc(s.nama_panggung)}</h2><p>Pendaftaran: <span class="tag ${s.status==='terverifikasi'?'ok':s.status==='ditolak'?'no':''}">${labelStatus[s.status]}</span></p>
  ${s.catatan_pembayaran?`<p class="err">${esc(s.catatan_pembayaran)}</p>`:''}
  ${s.status==='menunggu_bayar'?`<a class="btn" href="#bayar/${tok}">Bayar & kirim bukti (${rp(s.jumlah_tagihan)})</a>`:''}</div>`;
  if(s.status==='terverifikasi'){h+=`<div class="card"><h2>Kode pesertamu: ${esc(s.kode_peserta)}</h2><p>Rekam videomu, unggah ke TikTok/Facebook dengan caption ini lalu kirim link videonya di bawah.</p>
  <div class="copy" id="cap">${esc(cap)}</div><button class="sec" id="cp">Salin caption</button>
  <p>Video: <span class="tag ${s.video_status==='disetujui'?'ok':s.video_status==='ditolak'?'no':''}">${labelVideo[s.video_status]}</span></p>${s.catatan_video?`<p class="err">${esc(s.catatan_video)}</p>`:''}
- ${s.fase==='audisi'?`<label>Platform</label><select id="pl"><option value="tiktok">TikTok</option><option value="facebook">Facebook</option></select>
- <label>Link video</label><input id="u" value="${esc(s.video_url||'')}"><button id="kv">Kirim link video</button><div id="e" class="err"></div>`:''}</div>`;
+ ${vidPanel}</div>`;
   if(s.peringkat)h+=`<div class="card"><h2>Peringkatmu sekarang: ${s.peringkat}</h2><p class="m">Nilai audisi ${s.nilai_audisi}. Ajak temanmu like, komen, dan dukung videomu!</p></div>`}
- app.innerHTML=h;const cp=document.getElementById('cp');if(cp)cp.onclick=()=>navigator.clipboard.writeText(cap).then(()=>cp.textContent='Tersalin ✓');
+ app.innerHTML=h;const gl=document.getElementById('gl');if(gl)gl.onclick=()=>{document.getElementById('gf').style.display='';gl.style.display='none'};const cp=document.getElementById('cp');if(cp)cp.onclick=()=>navigator.clipboard.writeText(cap).then(()=>cp.textContent='Tersalin ✓');
  const kv=document.getElementById('kv');if(kv)kv.onclick=async()=>{try{await rpc('kirim_video',{p_token:tok,p_platform:form('pl'),p_url:form('u')});status(tok)}catch(x){document.getElementById('e').textContent=x.message}}}
 
 async function dukung(){
  const{data:kk}=await db.from('competitions').select('voting_dibuka').eq('slug',SLUG).maybeSingle();
  if(!kk||!kk.voting_dibuka){app.innerHTML='<div class="card"><h2>Voting belum dibuka</h2><p class="m">Pantau terus halaman beranda untuk pengumuman pembukaan.</p><a class="btn" href="index.html">Kembali ke beranda</a></div>';return}
- const[ps,{data:pk}]=await Promise.all([rpc('daftar_peserta_publik',{p_slug:SLUG}),db.from('vote_packages').select('id,nama,harga,jumlah_suara').order('urutan')]);
+ const{data:ev}=await db.from('competitions').select('id').eq('slug',SLUG).maybeSingle();
+ const[ps,{data:pk}]=await Promise.all([rpc('daftar_peserta_publik',{p_slug:SLUG}),db.from('vote_packages').select('id,nama,harga,jumlah_suara').eq('competition_id',ev?ev.id:null).order('urutan')]);
+ if(!ps.length||!pk.length){app.innerHTML=`<div class="card"><h2>${!ps.length?'Belum ada peserta yang bisa didukung':'Paket dukungan belum tersedia'}</h2><p class="m">${!ps.length?'Peserta resmi muncul di sini setelah pembayarannya diverifikasi dan videonya disetujui admin.':'Admin belum mengisi paket dukungan untuk lomba ini.'}</p><a class="btn" href="index.html">Kembali ke beranda</a></div>`;return}
  const pre=new URLSearchParams(location.search).get('peserta')||'';
  app.innerHTML=`<div class="card"><h2>Dukung peserta</h2>
  <label>Pilih peserta</label><select id="ps">${ps.map(p=>`<option value="${p.peserta_id}" ${p.kode_peserta===pre?'selected':''}>${esc(p.nama_panggung)} (${esc(p.kode_peserta)})</option>`).join('')}</select>
@@ -131,15 +140,20 @@ async function dukung(){
  <button id="go">Lanjut ke pembayaran</button><div id="e" class="err"></div></div>`;
  document.getElementById('go').onclick=async()=>{const e=document.getElementById('e');e.textContent='';
   try{const r=(await rpc('buat_vote',{p_participant_id:form('ps'),p_package_id:form('pk'),p_nama:form('n'),p_no_wa:form('wa'),p_tampil_nama:form('tn')||null,p_tampil_di_dinding:true,p_pesan:form('ms')||null}))[0];
-   bayar('vote',r.vote_id,r.jumlah_tagihan,r.tracking_token,`Nomor transaksi: ${r.nomor_transaksi} — cantumkan di berita transfer.`)}catch(x){e.textContent=x.message}}}
+   try{localStorage.setItem('tkp_vtok',r.tracking_token)}catch(x){}
+   bayar('vote',r.vote_id,r.jumlah_tagihan,r.tracking_token,`Nomor transaksi: ${r.nomor_transaksi} — cantumkan di berita transfer.`,form('wa'))}catch(x){e.textContent=x.message}}}
 
 async function voteok(tok){const v=(await rpc('status_vote',{p_token:tok}))[0];
- app.innerHTML=v?`<div class="card"><h2>Terima kasih!</h2><p>Dukungan ${v.jumlah_suara} suara untuk <b>${esc(v.nama_peserta)}</b> — ${labelStatus[v.status]}.</p><p class="m">Nomor transaksi ${esc(v.nomor_transaksi)}. Setelah admin memverifikasi, suaramu dihitung.</p><a class="btn" href="#">Kembali</a></div>`:'<div class="card">Tidak ditemukan.</div>'}
+ app.innerHTML=v?`<div class="card"><h2>Terima kasih!</h2><p>Dukungan ${v.jumlah_suara} suara untuk <b>${esc(v.nama_peserta)}</b> — ${labelStatus[v.status]}.</p><p class="m">Nomor transaksi ${esc(v.nomor_transaksi)}. Setelah admin memverifikasi, suaramu dihitung.</p>${v.status==='menunggu_bayar'?`<a class="btn" href="#bayarvote/${tok}">Bayar &amp; kirim bukti</a>`:''}<a class="btn" href="#">Kembali</a></div>`:'<div class="card">Tidak ditemukan.</div>'}
 
+async function hasil(sl){const r=await rpc('hasil_publik',{p_slug:sl||SLUG});
+ app.innerHTML=`<div class="card"><h2>Hasil lomba</h2>${r.length?r.map(x=>`<div class="row"><span class="r">${x.peringkat}</span><span style="flex:1"><b>${esc(x.nama_panggung)}</b> ${x.juara_favorit?'<span class="tag ok">Juara Favorit</span>':''}</span><b>${x.nilai_akhir}</b></div>`).join('')+'<p class="m">Nilai akhir = penilaian juri + dukungan masyarakat.</p>':'<p class="m">Hasil belum tersedia.</p>'}<a class="btn" href="index.html">Kembali ke beranda</a></div>`}
+
+async function initSlug(){try{const{data}=await db.from('site_settings').select('value').eq('key','event_aktif').maybeSingle();if(data&&data.value)SLUG=data.value}catch(e){}}
 async function route(){const[p,a]=location.hash.slice(1).split('/');app.innerHTML='<p class="m">Memuat…</p>';
  try{if(p==='daftar')await daftar();else if(p==='status')await status(a);else if(p==='bayar'){const s=(await rpc('status_peserta',{p_token:a}))[0];bayar('peserta',s.peserta_id,s.jumlah_tagihan,a)}
- else if(p==='dukung')await dukung();else if(p==='voteok')await voteok(a);else await home()}
+ else if(p==='dukung')await dukung();else if(p==='voteok')await voteok(a);else if(p==='bayarvote'){const v=(await rpc('status_vote',{p_token:a}))[0];bayar('vote',null,v.jumlah_tagihan,a,'Nomor transaksi: '+v.nomor_transaksi+' — cantumkan di berita transfer.')}else if(p==='hasil')await hasil(a);else await home()}
  catch(x){app.innerHTML=`<div class="card err">${esc(x.message)}</div>`}}
-addEventListener('hashchange',route);route();
+addEventListener('hashchange',route);initSlug().then(route);
 </script><script>document.getElementById("yr").textContent=new Date().getFullYear();const mb=document.getElementById("menuBtn"),nl=document.getElementById("navlinks");mb.onclick=()=>{const o=nl.classList.toggle("open");mb.textContent=o?"✕":"☰"};nl.querySelectorAll("a").forEach(a=>a.onclick=()=>{nl.classList.remove("open");mb.textContent="☰"});</script>
 </body></html>
